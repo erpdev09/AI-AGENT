@@ -34,29 +34,49 @@ async function scrapeTweets(page, searchQuery) {
             const threadData = await page.evaluate(() => {
                 const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
                 const originalTweet = articles[0];
-                const originalTweetData = {
-                    text: originalTweet?.querySelector('div[data-testid="tweetText"]')?.innerText || '',
-                    timestamp: originalTweet?.querySelector('time')?.getAttribute('datetime') || '',
-                    author: originalTweet?.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[0] || '',
-                    username: originalTweet?.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[1] || '',
-                    views: originalTweet?.querySelector('div[data-testid="analyticsButton"]')?.innerText || '0',
-                };
+                const originalAuthor = originalTweet?.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[0] || 'Unknown';
+                const originalTweetText = originalTweet?.querySelector('div[data-testid="tweetText"]')?.innerText || '';
 
-                const replies = articles.slice(1).map(reply => ({
-                    text: reply.querySelector('div[data-testid="tweetText"]')?.innerText || '',
-                    timestamp: reply.querySelector('time')?.getAttribute('datetime') || '',
-                    author: reply.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[0] || '',
-                    username: reply.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[1] || '',
-                }));
+                const replies = articles.slice(1).map(reply => {
+                    const replyAuthor = reply.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[0] || 'Unknown';
+                    const replyText = reply.querySelector('div[data-testid="tweetText"]')?.innerText || '';
+                    return {
+                        text: `${replyText} by ${replyAuthor}`
+                    };
+                });
 
                 return {
-                    originalTweet: originalTweetData,
+                    originalTweet: {
+                        text: `${originalTweetText} by ${originalAuthor}`
+                    },
                     replies: replies
                 };
             });
 
             if (threadData.originalTweet.text) {
                 tweetData.push(threadData);
+
+                // Add reply functionality
+                console.log("Attempting to reply to tweet...");
+                try {
+                    // Wait for reply input field
+                    await page.waitForSelector('div[role="textbox"][data-testid="tweetTextarea_0"]', { visible: true, timeout: 5000 });
+                    const replyBox = await page.$('div[role="textbox"][data-testid="tweetTextarea_0"]');
+                    
+                    // Click and type the reply
+                    await replyBox.click();
+                    await page.keyboard.type('hehaha yeah', { delay: 100 });
+
+                    // Wait for tweet button and click it
+                    await page.waitForSelector('button[data-testid="tweetButton"]', { visible: true, timeout: 5000 });
+                    await page.click('button[data-testid="tweetButton"]');
+                    
+                    console.log("Successfully posted reply: 'hehaha yeah'");
+                    // Wait for reply to process
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } catch (replyError) {
+                    console.error("Failed to post reply:", replyError);
+                }
             }
 
             console.log("Returning to search results...");
