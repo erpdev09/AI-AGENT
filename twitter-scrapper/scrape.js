@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { analyzeAndSaveTweets } = require('../client/clientreply');
 
 async function scrapeTweets(page, searchQuery) {
     console.log("Opening search bar...");
@@ -21,8 +22,9 @@ async function scrapeTweets(page, searchQuery) {
     await page.click('a[role="tab"][href*="f=live"]');
     await page.waitForNetworkIdle({ timeout: 5000 });
 
+    // Scrape tweets
     let tweetData = [];
-    const tweets = await page.$$('article[data-testid="tweet"]');
+    let tweets = await page.$$('article[data-testid="tweet"]');
 
     for (const tweet of tweets) {
         try {
@@ -50,9 +52,6 @@ async function scrapeTweets(page, searchQuery) {
 
             if (threadData.originalTweet.text) {
                 tweetData.push(threadData);
-
-                console.log("Attempting to reply to tweet...");
-                await attemptReply(page);
             }
 
             console.log("Returning to search results...");
@@ -62,6 +61,11 @@ async function scrapeTweets(page, searchQuery) {
             console.error("Error processing tweet:", error);
             continue;
         }
+    }
+
+    if (tweetData.length === 0) {
+        console.log("No tweets scraped. Exiting...");
+        return tweetData;
     }
 
     console.log("Extracted tweet threads:");
@@ -76,27 +80,75 @@ async function scrapeTweets(page, searchQuery) {
     fs.writeFileSync(filePath, JSON.stringify(tweetData, null, 2));
     console.log(`Data saved to ${filePath}`);
 
+    // Analyze tweets and generate replies
+    console.log("Analyzing tweets and generating replies...");
+    await analyzeAndSaveTweets();
+
+    // Load AI-generated replies
+    const toBeReplied = loadToBeReplied();
+    if (toBeReplied.length === 0) {
+        console.log("No replies generated. Exiting...");
+        return tweetData;
+    }
+
+    // Reply to tweets
+    tweets = await page.$$('article[data-testid="tweet"]'); // Re-query tweets to avoid stale elements
+    for (const [index, tweet] of tweets.entries()) {
+        if (index >= toBeReplied.length) break; // Avoid out-of-bounds access
+
+        try {
+            console.log("Clicking on tweet to open thread for replying...");
+            await tweet.click();
+            await page.waitForNetworkIdle({ timeout: 5000 });
+
+            const threadData = tweetData[index];
+            if (threadData.originalTweet.text) {
+                console.log("Attempting to reply to tweet...");
+                const replyText = toBeReplied[index]?.aiReply || "No AI reply available.";
+                await attemptReply(page, replyText);
+            }
+
+            console.log("Returning to search results...");
+            await page.goBack();
+            await page.waitForNetworkIdle({ timeout: 5000 });
+        } catch (error) {
+            console.error("Error replying to tweet:", error);
+            continue;
+        }
+    }
+
     return tweetData;
 }
 
-async function attemptReply(page) {
+function loadToBeReplied() {
     try {
-        // Wait for the reply textbox to be visible and ready
+        const filePath = path.join(__dirname, 'temp', 'tobereplied.json');
+        if (!fs.existsSync(filePath)) {
+            console.error("Error: tobereplied.json not found!");
+            return [];
+        }
+        const data = fs.readFileSync(filePath, "utf8");
+        return JSON.parse(data);
+    } catch (error) {
+        console.error("Error reading tobereplied.json:", error);
+        return [];
+    }
+}
+
+async function attemptReply(page, replyText) {
+    try {
         await page.waitForSelector('div[role="textbox"][data-testid="tweetTextarea_0"]', { visible: true, timeout: 10000 });
         const replyBox = await page.$('div[role="textbox"][data-testid="tweetTextarea_0"]');
         
-        // Focus the textbox and type the reply
         await replyBox.focus();
-        await page.keyboard.type('hehaha yeah', { delay: 50 });
+        await page.keyboard.type(replyText, { delay: 50 });
 
-        // Submit the reply using Ctrl+Enter
         await page.keyboard.down('Control');
         await page.keyboard.press('Enter');
         await page.keyboard.up('Control');
 
-        // Wait for the reply to post
         await page.waitForNetworkIdle({ timeout: 5000 });
-        console.log("Successfully posted reply: 'hehaha yeah' using Ctrl+Enter");
+        console.log(`Successfully posted reply: '${replyText}' using Ctrl+Enter`);
     } catch (replyError) {
         console.error("Failed to post reply:", replyError);
         await page.screenshot({ path: 'temp/reply_error.png' });
