@@ -14,22 +14,21 @@ async function scrapeTweets(page, searchQuery) {
     await page.keyboard.press('Enter');
 
     console.log("Waiting for search results...");
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await page.waitForNetworkIdle({ timeout: 10000 });
 
     console.log("Navigating to 'Latest' tab...");
     await page.waitForSelector('a[role="tab"][href*="f=live"]', { visible: true });
     await page.click('a[role="tab"][href*="f=live"]');
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await page.waitForNetworkIdle({ timeout: 5000 });
 
     let tweetData = [];
-
     const tweets = await page.$$('article[data-testid="tweet"]');
 
     for (const tweet of tweets) {
         try {
             console.log("Clicking on tweet to open thread...");
             await tweet.click();
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            await page.waitForNetworkIdle({ timeout: 5000 });
 
             const threadData = await page.evaluate(() => {
                 const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
@@ -40,15 +39,11 @@ async function scrapeTweets(page, searchQuery) {
                 const replies = articles.slice(1).map(reply => {
                     const replyAuthor = reply.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[0] || 'Unknown';
                     const replyText = reply.querySelector('div[data-testid="tweetText"]')?.innerText || '';
-                    return {
-                        text: `${replyText} by ${replyAuthor}`
-                    };
+                    return { text: `${replyText} by ${replyAuthor}` };
                 });
 
                 return {
-                    originalTweet: {
-                        text: `${originalTweetText} by ${originalAuthor}`
-                    },
+                    originalTweet: { text: `${originalTweetText} by ${originalAuthor}` },
                     replies: replies
                 };
             });
@@ -56,32 +51,13 @@ async function scrapeTweets(page, searchQuery) {
             if (threadData.originalTweet.text) {
                 tweetData.push(threadData);
 
-                // Add reply functionality
                 console.log("Attempting to reply to tweet...");
-                try {
-                    // Wait for reply input field
-                    await page.waitForSelector('div[role="textbox"][data-testid="tweetTextarea_0"]', { visible: true, timeout: 5000 });
-                    const replyBox = await page.$('div[role="textbox"][data-testid="tweetTextarea_0"]');
-                    
-                    // Click and type the reply
-                    await replyBox.click();
-                    await page.keyboard.type('hehaha yeah', { delay: 100 });
-
-                    // Wait for tweet button and click it
-                    await page.waitForSelector('button[data-testid="tweetButton"]', { visible: true, timeout: 5000 });
-                    await page.click('button[data-testid="tweetButton"]');
-                    
-                    console.log("Successfully posted reply: 'hehaha yeah'");
-                    // Wait for reply to process
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                } catch (replyError) {
-                    console.error("Failed to post reply:", replyError);
-                }
+                await attemptReply(page);
             }
 
             console.log("Returning to search results...");
             await page.goBack();
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            await page.waitForNetworkIdle({ timeout: 5000 });
         } catch (error) {
             console.error("Error processing tweet:", error);
             continue;
@@ -91,17 +67,41 @@ async function scrapeTweets(page, searchQuery) {
     console.log("Extracted tweet threads:");
     console.log(JSON.stringify(tweetData, null, 2));
 
-    // Save to JSON file
     const tempFolderPath = path.join(__dirname, 'temp');
     if (!fs.existsSync(tempFolderPath)) {
         fs.mkdirSync(tempFolderPath);
     }
-    
+
     const filePath = path.join(tempFolderPath, 'scraped_tweets.json');
     fs.writeFileSync(filePath, JSON.stringify(tweetData, null, 2));
     console.log(`Data saved to ${filePath}`);
 
     return tweetData;
+}
+
+async function attemptReply(page) {
+    try {
+        // Wait for the reply textbox to be visible and ready
+        await page.waitForSelector('div[role="textbox"][data-testid="tweetTextarea_0"]', { visible: true, timeout: 10000 });
+        const replyBox = await page.$('div[role="textbox"][data-testid="tweetTextarea_0"]');
+        
+        // Focus the textbox and type the reply
+        await replyBox.focus();
+        await page.keyboard.type('hehaha yeah', { delay: 50 });
+
+        // Submit the reply using Ctrl+Enter
+        await page.keyboard.down('Control');
+        await page.keyboard.press('Enter');
+        await page.keyboard.up('Control');
+
+        // Wait for the reply to post
+        await page.waitForNetworkIdle({ timeout: 5000 });
+        console.log("Successfully posted reply: 'hehaha yeah' using Ctrl+Enter");
+    } catch (replyError) {
+        console.error("Failed to post reply:", replyError);
+        await page.screenshot({ path: 'temp/reply_error.png' });
+        throw replyError;
+    }
 }
 
 module.exports = scrapeTweets;
