@@ -10,7 +10,6 @@ This project is a Node.js-based Twitter bot that scrapes tweets based on a searc
 - **Automated Replies**: Posts replies to tweets using a keyboard shortcut (Ctrl+Enter).
 - **File Storage**: Saves scraped tweets to `scraped_tweets.json` and replies to `tobereplied.json` in a `temp` directory.
   
-# AI-AGENT
 
 ## Project Structure
 ```
@@ -24,10 +23,6 @@ AI-AGENT/
 │   ├── clientreply.js    # AI analysis and reply generation
 ├── README.md             # Project documentation
 ```
-
-
-
-
 
 
 ## Prerequisites
