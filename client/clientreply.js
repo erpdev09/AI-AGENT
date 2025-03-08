@@ -1,18 +1,14 @@
-const { OpenAI } = require("openai");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fs = require("fs");
 const path = require("path");
 
-const baseURL = "https://api.aimlapi.com/v1";
-const apiKey = "a84bd072398746d7aabde062456652c6";
-
-const api = new OpenAI({
-  apiKey,
-  baseURL,
-});
+// Initialize Google Generative AI with Gemini API key
+const genAI = new GoogleGenerativeAI("");
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const loadTweets = () => {
   try {
-    const filePath = path.join(__dirname, "../twitter-scrapper/temp", "scraped_tweets.json"); // Adjusted path
+    const filePath = path.join(__dirname, "../twitter-scrapper/temp", "scraped_tweets.json");
     if (!fs.existsSync(filePath)) {
       console.error("Error: scraped_tweets.json not found at", filePath);
       return [];
@@ -48,42 +44,26 @@ const analyzeTweet = async (tweet) => {
   console.log("Original Tweet:", originalText);
   console.log("First Reply:", firstReply);
 
-  const systemPrompt = `You are an Evaluator of Tweets on Twitter. You can determine the context of tweets. Now evaluate this: 
-  Original Tweet: '${originalText}' 
-  Reply: '${firstReply}'`;
+  // Prompt for context evaluation
+  const contextPrompt = `You are an Evaluator of Tweets on Twitter. You can determine the context of tweets. Now evaluate this: 
+  Original Tweet: '${originalText.replace(/'/g, "\\'")}' 
+  Reply: '${firstReply.replace(/'/g, "\\'")}'
+  Tell me about Tweet Context`;
 
-  const userPrompt = "Tell me about Tweet Context";
-
-  const replySystemPrompt = `You are a casual Twitter user. Based on this context, respond naturally as if replying to the conversation: 
-  Original Tweet: '${originalText}' 
-  Reply: '${firstReply}'`;
-
-  const replyUserPrompt = "Post a reply as a normal user";
+  // Prompt for casual reply
+  const replyPrompt = `You are a casual Twitter user. Based on this context, respond naturally as if replying to the conversation: 
+  Original Tweet: '${originalText.replace(/'/g, "\\'")}' 
+  Reply: '${firstReply.replace(/'/g, "\\'")}'
+  Post a reply as a normal user`;
 
   try {
-    const contextCompletion = await api.chat.completions.create({
-      model: "mistralai/Mistral-7B-Instruct-v0.2",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 256,
-    });
+    // Context evaluation using Gemini
+    const contextResult = await model.generateContent(contextPrompt);
+    const contextResponse = contextResult.response.text();
 
-    const contextResponse = contextCompletion.choices[0].message.content;
-
-    const replyCompletion = await api.chat.completions.create({
-      model: "mistralai/Mistral-7B-Instruct-v0.2",
-      messages: [
-        { role: "system", content: replySystemPrompt },
-        { role: "user", content: replyUserPrompt },
-      ],
-      temperature: 0.9,
-      max_tokens: 128,
-    });
-
-    const userReply = replyCompletion.choices[0].message.content;
+    // Reply generation using Gemini
+    const replyResult = await model.generateContent(replyPrompt);
+    const userReply = replyResult.response.text();
 
     console.log("🟢 AI Context Evaluation:", contextResponse);
     console.log("🟢 AI Generated Reply:", userReply);
@@ -94,7 +74,7 @@ const analyzeTweet = async (tweet) => {
       aiReply: userReply
     };
   } catch (error) {
-    console.error("Error processing AI request:", error);
+    console.error("Error processing Gemini AI request:", error);
     return null;
   }
 };
@@ -122,3 +102,4 @@ const analyzeAndSaveTweets = async () => {
 };
 
 module.exports = { analyzeAndSaveTweets };
+
