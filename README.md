@@ -1,4 +1,6 @@
 # SOCIAL AI AGENT
+![Image Description](https://res.cloudinary.com/dqhgpfnmb/image/upload/v1741419691/whritbdibnedxtalmt1m.webp)
+
 
 ## Overview
 This project is a Node.js-based Twitter bot that scrapes tweets based on a search query, analyzes them using the Mistral AI model, and automatically posts replies. It leverages Puppeteer for browser automation and the AIML API for AI-driven analysis and reply generation. The system saves scraped tweets and generated replies to JSON files for persistence and further processing.
