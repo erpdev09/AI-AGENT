@@ -3,7 +3,7 @@
 
 
 ## Overview
-This project is a Node.js-based Twitter bot that scrapes tweets based on a search query, analyzes them using the Mistral AI model, and automatically posts replies. It leverages Puppeteer for browser automation and the AIML API for AI-driven analysis and reply generation. The system saves scraped tweets and generated replies to JSON files for persistence and further processing.
+This project is a AI Agent for Twitter bot that scrapes tweets based on a search query, analyzes them using the Mistral AI model, Gemini, Deepseek (AI Model Provider), and automatically posts replies. It leverages Puppeteer for browser automation and the AIML API for AI-driven analysis and reply generation. The system saves scraped tweets and generated replies to JSON files for persistence and further processing.
 
 ## Features
 - **Tweet Scraping**: Scrapes tweets from Twitter’s "Latest" tab for a given search query.
