@@ -7,9 +7,9 @@ const scrapeTweets = require('./scrape');
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    const username = 'Elisabe38130500';
+    const username = 'Elisabethxbt';
     const password = 'Takemyheart@1';
-    const searchQuery = '@Elisabe38130500';
+    const searchQuery = '@Elisabethxbt';
 
     await login(page, username, password);
     const tweets = await scrapeTweets(page, searchQuery);
