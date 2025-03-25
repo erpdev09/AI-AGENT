@@ -2,32 +2,29 @@ name: Node.js CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [ "main" ]
   pull_request:
-    branches: ["main"]
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x, 22.x]
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Use Node.js ${{ matrix.node-version }}
+    - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ matrix.node-version }}
+        node-version: 20
         cache: 'npm'
 
     - name: Install dependencies
       run: |
         npm install
         npx puppeteer install  # Ensure Chromium is installed
+        chmod -R 755 node_modules/.bin  # Fix permission issues
 
-    - name: Run main.js script
-      run: npm start
+    - name: Run the Puppeteer script
+      run: node twitter-scrapper/main.js
