@@ -17,13 +17,12 @@ This project is a AI Agent for Twitter bot that scrapes tweets based on a search
 ```
 AI-AGENT/
 ├── twitter-scrapper/
-│   ├── scrapeTweets.js    # Main scraping and replying logic
-│   ├── temp/             # Directory for JSON output
-│   │   ├── scraped_tweets.json  # Scraped tweet data
-│   │   ├── tobereplied.json     # AI-generated replies
+│   ├── scrapeTweets.js    # Main scraping, liking, retweeting logic with PostgreSQL
+│   ├── temp/             # (Optional, can be removed if fully DB-based)
 ├── client/
-│   ├── clientreply.js    # AI analysis and reply generation
+│   ├── clientreply.js    # AI analysis and reply generation (unchanged for now)
 ├── README.md             # Project documentation
+├── connectdb.js                 # Database connection setup (new file)
 ```
 
 
