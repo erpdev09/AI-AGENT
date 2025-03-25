@@ -1,36 +1,45 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const fs = require("fs");
-const path = require("path");
+const pool = require("../config/dbconnect"); 
 
 // Initialize Google Generative AI with Gemini API key
 const genAI = new GoogleGenerativeAI("");
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-const loadTweets = () => {
+// Fetch tweets from the database
+const fetchTweetsFromDB = async () => {
   try {
-    const filePath = path.join(__dirname, "../twitter-scrapper/temp", "scraped_tweets.json");
-    if (!fs.existsSync(filePath)) {
-      console.error("Error: scraped_tweets.json not found at", filePath);
-      return [];
-    }
-    const data = fs.readFileSync(filePath, "utf8");
-    return JSON.parse(data);
+    const tweetQuery = `
+      SELECT tweet_id, text, author 
+      FROM tweets;
+    `;
+    const replyQuery = `
+      SELECT tweet_id, text, author 
+      FROM replies;
+    `;
+
+    const tweetsResult = await pool.query(tweetQuery);
+    const repliesResult = await pool.query(replyQuery);
+
+    const repliesMap = {};
+    repliesResult.rows.forEach(reply => {
+      if (!repliesMap[reply.tweet_id]) repliesMap[reply.tweet_id] = [];
+      repliesMap[reply.tweet_id].push({ text: `${reply.text} by ${reply.author}` });
+    });
+
+    return tweetsResult.rows.map(tweet => ({
+      originalTweet: {
+        tweetId: tweet.tweet_id,
+        text: `${tweet.text} by ${tweet.author}`,
+      },
+      replies: repliesMap[tweet.tweet_id] || [],
+    }));
   } catch (error) {
-    console.error("Error reading scraped_tweets.json:", error);
+    console.error("Error fetching tweets from DB:", error);
     return [];
   }
 };
 
-const saveToBeReplied = (toBeReplied) => {
-  const tempFolderPath = path.join(__dirname, "../twitter-scrapper/temp");
-  if (!fs.existsSync(tempFolderPath)) {
-    fs.mkdirSync(tempFolderPath, { recursive: true });
-  }
-  const filePath = path.join(tempFolderPath, "tobereplied.json");
-  fs.writeFileSync(filePath, JSON.stringify(toBeReplied, null, 2));
-  console.log(`Tweets to be replied saved to ${filePath}`);
-};
-
+// Generate AI reply
 const analyzeTweet = async (tweet) => {
   if (!tweet.originalTweet || !tweet.originalTweet.text) {
     console.warn("Skipping tweet: Invalid data format");
@@ -44,33 +53,18 @@ const analyzeTweet = async (tweet) => {
   console.log("Original Tweet:", originalText);
   console.log("First Reply:", firstReply);
 
-  // Prompt for context evaluation
-  const contextPrompt = `You are an Evaluator of Tweets on Twitter. You can determine the context of tweets. Now evaluate this: 
-  Original Tweet: '${originalText.replace(/'/g, "\\'")}' 
-  Reply: '${firstReply.replace(/'/g, "\\'")}'
-  Tell me about Tweet Context`;
-
-  // Prompt for casual reply
-  const replyPrompt = `You are a casual Twitter user. Based on this context, respond naturally as if replying to the conversation: 
-  Original Tweet: '${originalText.replace(/'/g, "\\'")}' 
-  Reply: '${firstReply.replace(/'/g, "\\'")}'
+  const replyPrompt = `You are a casual Twitter user. Respond naturally to this conversation:
+  Original Tweet: '${originalText}'
+  Reply: '${firstReply}'
   Post a reply as a normal user`;
 
   try {
-    // Context evaluation using Gemini
-    const contextResult = await model.generateContent(contextPrompt);
-    const contextResponse = contextResult.response.text();
-
-    // Reply generation using Gemini
     const replyResult = await model.generateContent(replyPrompt);
     const userReply = replyResult.response.text();
 
-    console.log("🟢 AI Context Evaluation:", contextResponse);
     console.log("🟢 AI Generated Reply:", userReply);
-
     return {
       originalTweet: tweet.originalTweet,
-      replies: tweet.replies,
       aiReply: userReply
     };
   } catch (error) {
@@ -78,28 +72,47 @@ const analyzeTweet = async (tweet) => {
     return null;
   }
 };
+const saveAIRepliesToDB = async (aiReplies) => {
+  try {
+    for (const reply of aiReplies) {
+      const insertQuery = `
+        INSERT INTO replies (tweet_id, text, author, is_ai_reply)
+        VALUES ($1, $2, $3, $4);
+      `;
+      await pool.query(insertQuery, [
+        reply.originalTweet.tweetId, // tweet_id
+        reply.aiReply,               // text
+        "AI_Bot",                    // author
+        true                         // is_ai_reply
+      ]);
+    }
+    console.log("✅ AI Replies saved to database.");
+  } catch (error) {
+    console.error("❌ Error saving AI replies to DB:", error);
+  }
+};
 
+
+
+// Main function
 const analyzeAndSaveTweets = async () => {
-  const tweets = loadTweets();
+  const tweets = await fetchTweetsFromDB();
   if (tweets.length === 0) {
-    console.log("No tweets found to analyze. Exiting analysis...");
+    console.log("No tweets found to analyze. Exiting...");
     return;
   }
 
-  const toBeReplied = [];
+  const aiReplies = [];
   for (const tweet of tweets) {
     const result = await analyzeTweet(tweet);
-    if (result) {
-      toBeReplied.push(result);
-    }
+    if (result) aiReplies.push(result);
   }
 
-  if (toBeReplied.length > 0) {
-    saveToBeReplied(toBeReplied);
+  if (aiReplies.length > 0) {
+    await saveAIRepliesToDB(aiReplies);
   } else {
-    console.log("No tweets to be replied.");
+    console.log("No AI replies generated.");
   }
 };
 
 module.exports = { analyzeAndSaveTweets };
-

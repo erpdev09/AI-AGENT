@@ -1,12 +1,4 @@
-[
-  {
-    "originalTweet": {
-      "text": "What a time to be alive! by Elisabeth"
-    },
-    "replies": [
-      {
-        "text": "yeah it's crazy! by rilso testaccount"
-      }
-    ]
-  }
-]
+{
+  "status": "deprecated now we used postgres"
+
+}

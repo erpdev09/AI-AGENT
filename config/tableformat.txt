@@ -1,0 +1,29 @@
+ tweet_id          | text                      | author
+-------------------+---------------------------+-----------
+ 1898005844685672879 | i think the world is bad place | Elisabeth
+
+
+  reply_id          | tweet_id          | text                                      | author          | is_ai_reply
+-------------------+-------------------+-------------------------------------------+-----------------+-------------
+ 1898005885227876496 | 1898005844685672879 | Yeah sometimes                            | Muhammed Nufais | FALSE
+ 1898006496853868604 | 1898005844685672879 | True, but there's still good stuff too!...| Elisabeth       | FALSE
+ ...
+ NULL              | 1898005844685672879 | Oof, tell me about it. 😩 #relatable...   | AI              | TRUE
+
+
+
+
+my_new_database
+│── tweets
+│   ├── tweet_id      (BIGINT PRIMARY KEY)  -- Unique ID for each tweet (supports large numbers)
+│   ├── text          (TEXT NOT NULL)       -- Tweet content
+│   ├── author        (VARCHAR(255) NOT NULL) -- Author of the tweet
+│   ├── created_at    (TIMESTAMP DEFAULT CURRENT_TIMESTAMP) -- Timestamp of creation
+│
+│── replies
+│   ├── reply_id      (BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY)  -- Unique ID for each reply (auto-incremented)
+│   ├── tweet_id      (BIGINT REFERENCES tweets(tweet_id) ON DELETE CASCADE) -- Associated tweet
+│   ├── text          (TEXT NOT NULL)       -- Reply content
+│   ├── author        (VARCHAR(255) NOT NULL) -- Author of the reply
+│   ├── is_ai_reply   (BOOLEAN DEFAULT FALSE) -- Flag to indicate AI-generated reply
+│   ├── created_at    (TIMESTAMP DEFAULT CURRENT_TIMESTAMP) -- Timestamp of reply creation

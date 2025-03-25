@@ -13,6 +13,8 @@
     "@google/generative-ai": "^0.22.0",
     "axios": "^1.7.9",
     "llamaai": "^1.0.4",
-    "openai": "^4.85.4"
+    "openai": "^4.85.4",
+    "pg": "^8.14.1",
+    "puppeteer": "^24.4.0"
   }
 }

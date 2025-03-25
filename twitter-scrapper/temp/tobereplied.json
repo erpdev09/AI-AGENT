@@ -1,13 +1,5 @@
-[
-  {
-    "originalTweet": {
-      "text": "What a time to be alive! by Elisabeth"
-    },
-    "replies": [
-      {
-        "text": "yeah it's crazy! by rilso testaccount"
-      }
-    ],
-    "aiReply": " 'So true! Always feels like there's something new happening every day. 😎'"
+{
+    "status": "deprecated now we used postgres"
+  
   }
-]
+  

@@ -1,6 +1,5 @@
-const fs = require('fs');
-const path = require('path');
 const { analyzeAndSaveTweets } = require('../client/clientreply');
+const pool = require('../config/dbconnect');
 
 async function scrapeTweets(page, searchQuery) {
     console.log("Opening search bar...");
@@ -22,7 +21,6 @@ async function scrapeTweets(page, searchQuery) {
     await page.click('a[role="tab"][href*="f=live"]');
     await page.waitForNetworkIdle({ timeout: 5000 });
 
-    // Scrape tweets
     let tweetData = [];
     let tweets = await page.$$('article[data-testid="tweet"]');
 
@@ -37,21 +35,24 @@ async function scrapeTweets(page, searchQuery) {
                 const originalTweet = articles[0];
                 const originalAuthor = originalTweet?.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[0] || 'Unknown';
                 const originalTweetText = originalTweet?.querySelector('div[data-testid="tweetText"]')?.innerText || '';
+                const originalTweetId = originalTweet?.getAttribute('data-tweet-id') || Math.floor(Math.random() * 1e18);
 
                 const replies = articles.slice(1).map(reply => {
                     const replyAuthor = reply.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[0] || 'Unknown';
                     const replyText = reply.querySelector('div[data-testid="tweetText"]')?.innerText || '';
-                    return { text: `${replyText} by ${replyAuthor}` };
+                    const replyId = reply.getAttribute('data-tweet-id') || Math.floor(Math.random() * 1e18);
+                    return { replyId, text: `${replyText} by ${replyAuthor}` };
                 });
 
                 return {
-                    originalTweet: { text: `${originalTweetText} by ${originalAuthor}` },
+                    originalTweet: { tweetId: originalTweetId, text: `${originalTweetText} by ${originalAuthor}`, author: originalAuthor },
                     replies: replies
                 };
             });
 
             if (threadData.originalTweet.text) {
                 tweetData.push(threadData);
+                await saveTweetToDatabase(threadData);
             }
 
             console.log("Returning to search results...");
@@ -71,40 +72,31 @@ async function scrapeTweets(page, searchQuery) {
     console.log("Extracted tweet threads:");
     console.log(JSON.stringify(tweetData, null, 2));
 
-    const tempFolderPath = path.join(__dirname, 'temp');
-    if (!fs.existsSync(tempFolderPath)) {
-        fs.mkdirSync(tempFolderPath);
-    }
-
-    const filePath = path.join(tempFolderPath, 'scraped_tweets.json');
-    fs.writeFileSync(filePath, JSON.stringify(tweetData, null, 2));
-    console.log(`Data saved to ${filePath}`);
-
-    // Analyze tweets and generate replies
     console.log("Analyzing tweets and generating replies...");
     await analyzeAndSaveTweets();
 
-    // Load AI-generated replies
-    const toBeReplied = loadToBeReplied();
-    if (toBeReplied.length === 0) {
-        console.log("No replies generated. Exiting...");
-        return tweetData;
-    }
+    // Load AI replies from the database
+    const toBeReplied = await loadAIRepliesFromDB();
 
     // Reply to tweets
-    tweets = await page.$$('article[data-testid="tweet"]'); // Re-query tweets to avoid stale elements
+    tweets = await page.$$('article[data-testid="tweet"]'); // Re-query to avoid stale elements
     for (const [index, tweet] of tweets.entries()) {
-        if (index >= toBeReplied.length) break; // Avoid out-of-bounds access
+        if (index >= tweetData.length) break;
 
         try {
             console.log("Clicking on tweet to open thread for replying...");
+            await page.waitForSelector('article[data-testid="tweet"]', { visible: true, timeout: 10000 });
+            await tweet.scrollIntoView({ behavior: 'smooth', block: 'center' });
             await tweet.click();
             await page.waitForNetworkIdle({ timeout: 5000 });
 
             const threadData = tweetData[index];
             if (threadData.originalTweet.text) {
                 console.log("Attempting to reply to tweet...");
-                const replyText = toBeReplied[index]?.aiReply || "No AI reply available.";
+                const aiReplyData = toBeReplied.find(reply => 
+                    reply.originalTweet.tweetId.toString() === threadData.originalTweet.tweetId.toString()
+                );
+                const replyText = aiReplyData?.aiReply || "Looks like the AI didn’t generate a reply for this one. Here’s a default response!";
                 await attemptReply(page, replyText);
             }
 
@@ -117,20 +109,55 @@ async function scrapeTweets(page, searchQuery) {
         }
     }
 
+    console.log("Final Scraped Data:", tweetData);
     return tweetData;
 }
 
-function loadToBeReplied() {
+async function saveTweetToDatabase(threadData) {
+    const client = await pool.connect();
     try {
-        const filePath = path.join(__dirname, 'temp', 'tobereplied.json');
-        if (!fs.existsSync(filePath)) {
-            console.error("Error: tobereplied.json not found!");
-            return [];
+        const { originalTweet, replies } = threadData;
+
+        await client.query(
+            `INSERT INTO tweets (tweet_id, text, author) VALUES ($1, $2, $3) ON CONFLICT (tweet_id) DO NOTHING;`,
+            [originalTweet.tweetId, originalTweet.text, originalTweet.author]
+        );
+
+        for (const reply of replies) {
+            await client.query(
+                `INSERT INTO replies (tweet_id, text, author) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;`,
+                [originalTweet.tweetId, reply.text, reply.text.split(' by ').pop()]
+            );
         }
-        const data = fs.readFileSync(filePath, "utf8");
-        return JSON.parse(data);
+
+        console.log(`Saved tweet and replies for Tweet ID: ${originalTweet.tweetId}`);
+    } catch (err) {
+        console.error("Database error:", err);
+    } finally {
+        client.release();
+    }
+}
+
+async function loadAIRepliesFromDB() {
+    try {
+        const query = `
+            SELECT t.tweet_id, t.text AS original_text, t.author AS original_author, r.text AS ai_reply
+            FROM tweets t
+            JOIN replies r ON t.tweet_id = r.tweet_id
+            WHERE r.is_ai_reply = TRUE AND r.author = 'AI_Bot'
+            ORDER BY r.reply_id DESC; -- Get the latest replies
+        `;
+        const result = await pool.query(query);
+
+        return result.rows.map(row => ({
+            originalTweet: {
+                tweetId: row.tweet_id,
+                text: `${row.original_text} by ${row.original_author}`,
+            },
+            aiReply: row.ai_reply
+        }));
     } catch (error) {
-        console.error("Error reading tobereplied.json:", error);
+        console.error("Error loading AI replies from database:", error);
         return [];
     }
 }
