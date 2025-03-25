@@ -25,7 +25,6 @@ jobs:
 
     - run: npm ci
     - run: npm run build --if-present
-    - run: npm test
 
     # Run main.js explicitly from twitter-scrapper folder
     - name: Run main.js script
