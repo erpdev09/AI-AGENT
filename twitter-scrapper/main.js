@@ -1,6 +1,9 @@
 const puppeteer = require('puppeteer');
 const login = require('./login');
 const scrapeTweets = require('./scrape');
+const { analyzeAndSaveTweets } = require('./clientreply'); // Importing clientreply.js
+const { checkAndScrapeUnreadDMs } = require('./readdm'); // Importing readdm.js
+const { scrollTwitterFeed } = require('./scroll'); // Importing scroll.js
 
 (async () => {
     const browser = await puppeteer.launch({ headless: false });
@@ -11,10 +14,26 @@ const scrapeTweets = require('./scrape');
     const password = 'Takemyheart@1';
     const searchQuery = '@Elisabethxbt';
 
+    // Login to Twitter
     await login(page, username, password);
-    const tweets = await scrapeTweets(page, searchQuery);
 
+    // Step 1: Scrape Tweets
+    console.log("Scraping tweets...");
+    const tweets = await scrapeTweets(page, searchQuery);
     console.log("Final Scraped Data:", tweets);
 
+    // Step 2: Analyze and reply to tweets using AI (clientreply.js)
+    console.log("Analyzing and generating replies for tweets...");
+    await analyzeAndSaveTweets();
+
+    // Step 3: Check and reply to unread DMs (readdm.js)
+    console.log("Checking unread DMs...");
+    await checkAndScrapeUnreadDMs();
+
+    // Step 4: Scroll through the feed and like posts (scroll.js)
+    console.log("Scrolling through Twitter feed...");
+    await scrollTwitterFeed();
+
+    // Close the browser after tasks are completed
     await browser.close();
 })();
