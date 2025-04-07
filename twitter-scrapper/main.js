@@ -1,9 +1,9 @@
 const puppeteer = require('puppeteer');
 const login = require('./login');
 const scrapeTweets = require('./scrape');
-const { analyzeAndSaveTweets } = require('./clientreply'); // Importing clientreply.js
-const { checkAndScrapeUnreadDMs } = require('./readdm'); // Importing readdm.js
-const { scrollTwitterFeed } = require('./scroll'); // Importing scroll.js
+const { analyzeAndSaveTweets } = require('../client/clientreply'); // Importing clientreply.js
+const { checkAndScrapeUnreadDMs } = require('../client/replydm'); // Importing readdm.js
+const { scrollTwitterFeed } = require('../client/scroll'); // Importing scroll.js
 
 (async () => {
     const browser = await puppeteer.launch({ headless: false });
