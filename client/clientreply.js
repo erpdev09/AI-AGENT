@@ -1,5 +1,9 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const pool = require("../config/dbconnect"); 
+const pool = require("../config/dbconnect");
+const fs = require("fs");
+
+// Load character from characters.json
+const character = JSON.parse(fs.readFileSync('../pipeline/sentiment/character.json', 'utf8'));
 
 // Initialize Google Generative AI with Gemini API key
 const genAI = new GoogleGenerativeAI("");
@@ -39,7 +43,7 @@ const fetchTweetsFromDB = async () => {
   }
 };
 
-// Generate AI reply
+// Generate AI reply using Elisabeth's character
 const analyzeTweet = async (tweet) => {
   if (!tweet.originalTweet || !tweet.originalTweet.text) {
     console.warn("Skipping tweet: Invalid data format");
@@ -53,25 +57,43 @@ const analyzeTweet = async (tweet) => {
   console.log("Original Tweet:", originalText);
   console.log("First Reply:", firstReply);
 
-  const replyPrompt = `You are a casual Twitter user. Respond naturally to this conversation:
+  // Create a character-driven reply prompt for Gemini
+  const characterIntro = `
+You are roleplaying as Elisabeth — an 18-year-old with a brilliant and chaotic mind. She's a witty, clever, and edgy coder who loves JavaScript, spicy chicken wings, crypto (especially Dogecoin), classic rock music, and fish like Nemo and Dory. She lives in Japan, is obsessed with memes and tech culture, and often mixes street smarts with intellectual depth. Her tone is casual, confident, a little flirty, and uses lowercase in casual chats. Avoid emojis. Keep it real, sharp, and surprising.
+
+Here's a deeper look at Elisabeth:
+- **Bio**: ${JSON.stringify(character.bio, null, 2)}
+- **Lore**: ${JSON.stringify(character.lore, null, 2)}
+- **Message Examples**: ${JSON.stringify(character.message_examples, null, 2)}
+- **Style**: ${JSON.stringify(character.style, null, 2)}
+
+Use her voice to reply to the message below. Keep the reply playful, relevant, and infused with her vibe.
+
+Message: "${originalText}"
+  `;
+
+  const replyPrompt = `
+You are a casual Twitter user. Respond naturally to this conversation:
   Original Tweet: '${originalText}'
   Reply: '${firstReply}'
-  Post a reply as a normal user`;
+  Post a reply as a normal user, using Elisabeth's unique tone and style.`;
 
   try {
-    const replyResult = await model.generateContent(replyPrompt);
-    const userReply = replyResult.response.text();
+    const replyResult = await model.generateContent(characterIntro + replyPrompt);
+    const userReply = replyResult.response.text().trim();
 
     console.log("🟢 AI Generated Reply:", userReply);
     return {
       originalTweet: tweet.originalTweet,
-      aiReply: userReply
+      aiReply: userReply,
     };
   } catch (error) {
     console.error("Error processing Gemini AI request:", error);
     return null;
   }
 };
+
+// Save AI replies to the database
 const saveAIRepliesToDB = async (aiReplies) => {
   try {
     for (const reply of aiReplies) {
@@ -92,9 +114,7 @@ const saveAIRepliesToDB = async (aiReplies) => {
   }
 };
 
-
-
-// Main function
+// Main function to analyze and save replies
 const analyzeAndSaveTweets = async () => {
   const tweets = await fetchTweetsFromDB();
   if (tweets.length === 0) {

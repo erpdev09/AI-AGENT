@@ -1,14 +1,18 @@
 const puppeteer = require('puppeteer');
 const login = require('../twitter-scrapper/login');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const fs = require('fs');
 
-const genAI = new GoogleGenerativeAI("");
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Load character from characters.json
+const character = JSON.parse(fs.readFileSync('../pipeline/sentiment/character.json', 'utf8'));
+
+const genAI = new GoogleGenerativeAI('');
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 async function checkAndScrapeUnreadDMs() {
     const browser = await puppeteer.launch({
         headless: false,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
     const page = await browser.newPage();
@@ -49,103 +53,89 @@ async function checkAndScrapeUnreadDMs() {
                     if (hasUnread) {
                         console.log(`Opening unread conversation... (${unreadCount} left)`);
                         await conversation.click();
+                        await page.waitForSelector('[data-testid="DmScrollerContainer"]');
                         await new Promise(resolve => setTimeout(resolve, 3000));
 
-                        await page.waitForSelector('[data-testid="DmScrollerContainer"]');
+                        const msgLoc = await page.$$('[data-testid="tweetText"]');
+                        const lastMessages = msgLoc.slice(-3); // Check only last 3
+                        let replied = false;
 
-                        let lastMessageSize = 0;
-                        const messages = new Set();
+                        for (const msg of lastMessages) {
+                            const messageText = await msg.evaluate(el => el.textContent.trim());
+                            if (!messageText) continue;
 
-                        // Scroll down and collect messages
-                        while (true) {
-                            const msgLoc = await page.$$('[data-testid="tweetText"]');
+                            const parentHandle = await msg.evaluateHandle(el => el.parentElement);
+                            const backgroundColor = await parentHandle.evaluate(el => {
+                                return window.getComputedStyle(el).backgroundColor;
+                            });
 
-                            for (const msg of msgLoc.reverse()) {
-                                const messageText = await msg.evaluate(el => el.textContent.trim());
+                            const sender = backgroundColor.includes('rgb(29, 155, 240)') ? 'You' : 'Them';
 
-                                if (!messageText || messages.has(messageText)) continue;
+                            if (sender === 'Them' && !replied) {
+                                console.log("🟡 Message from Them:", messageText);
 
-                                // Determine sender based on background color
-                                const parentHandle = await msg.evaluateHandle(el => el.parentElement);
-                                const backgroundColor = await parentHandle.evaluate(el => {
-                                    return window.getComputedStyle(el).backgroundColor;
-                                });
+                                const aiReply = await generateAIReply(messageText);
+                                console.log("🟢 AI Reply:", aiReply);
 
-                                const sender = backgroundColor.includes('rgb(29, 155, 240)') ? 'You' : 'Them';
-                                messages.add(`${sender}: ${messageText}`);
-                            }
-
-                            if (messages.size === lastMessageSize) break; // Stop if no new messages appear
-                            lastMessageSize = messages.size;
-
-                            await page.keyboard.press('ArrowDown');
-                            await new Promise(resolve => setTimeout(resolve, 1000));
-                        }
-
-                        console.log("🟡 Collected Messages:");
-                        messages.forEach(msg => console.log(msg));
-
-                        // Process each unread message
-                        for (const msg of messages) {
-                            if (msg.startsWith("Them: ")) {
-                                const originalMessage = msg.replace("Them: ", "");
-                                console.log("🟡 Unread Message:", originalMessage);
-
-                                // Generate AI reply
-                                const aiReply = await generateAIReply(originalMessage);
-                                console.log("🟢 AI Generated Reply:", aiReply);
-
-                                // Send AI reply
                                 await sendReply(page, aiReply);
+                                replied = true;
 
-                                // Delay before processing the next message
                                 await new Promise(resolve => setTimeout(resolve, 2000));
                             }
                         }
 
-                        // Go back to DM list
                         await page.goBack();
                         await new Promise(resolve => setTimeout(resolve, 2000));
 
-                        // Update unread count
                         unreadCount = await countUnreadMessages();
-                        console.log(`Updated unread messages count: ${unreadCount}`);
+                        console.log(`Updated unread count: ${unreadCount}`);
                     }
-                } catch (error) {
-                    console.log("Error processing a conversation:", error.message);
+                } catch (err) {
+                    console.error("❌ Error in conversation loop:", err.message);
                 }
             }
 
             if (unreadCount === 0) {
-                console.log("All unread messages have been processed.");
+                console.log("✅ All unread messages processed.");
                 break;
             }
         }
 
     } catch (error) {
-        console.error('An error occurred:', error);
+        console.error('❌ General Error:', error.message);
         await page.screenshot({ path: 'error_screenshot.png' });
     } finally {
         await browser.close();
     }
 }
 
-// Function to generate AI reply using Gemini API
+// 🔮 Gemini-based AI reply with Elisabeth's character traits
 async function generateAIReply(originalText) {
     try {
-        const replyPrompt = `You are a casual Twitter user. Respond naturally to this message:
-        Original message: '${originalText}'
-        Reply as a normal user.`;
+        // Pass the entire character JSON as context to Gemini
+        const characterIntro = `
+You are roleplaying as Elisabeth — an 18-year-old with a brilliant and chaotic mind. She's a witty, clever, and edgy coder who loves JavaScript, spicy chicken wings, crypto (especially Dogecoin), classic rock music, and fish like Nemo and Dory. She lives in Japan, is obsessed with memes and tech culture, and often mixes street smarts with intellectual depth. Her tone is casual, confident, a little flirty, and uses lowercase in casual chats. Avoid emojis. Keep it real, sharp, and surprising.
 
-        const replyResult = await model.generateContent(replyPrompt);
-        return replyResult.response.text();
+Here's a deeper look at Elisabeth:
+- **Bio**: ${JSON.stringify(character.bio, null, 2)}
+- **Lore**: ${JSON.stringify(character.lore, null, 2)}
+- **Message Examples**: ${JSON.stringify(character.message_examples, null, 2)}
+- **Style**: ${JSON.stringify(character.style, null, 2)}
+
+Use her voice to reply to the message below. Keep the reply playful, relevant, and infused with her vibe.
+
+Message: "${originalText}"
+`;
+
+        const replyResult = await model.generateContent(characterIntro);
+        return replyResult.response.text().trim();
     } catch (error) {
-        console.error("❌ Error generating AI reply:", error.message);
-        return "Sorry, I couldn't generate a reply.";
+        console.error("❌ Error generating reply:", error.message);
+        return "sorry, couldn't think of anything cool to say.";
     }
 }
 
-// Function to send AI-generated reply
+// 💬 Send reply in the DM
 async function sendReply(page, replyText) {
     try {
         await page.waitForSelector('[data-testid="dmComposerTextInput"]', { visible: true });
@@ -154,9 +144,9 @@ async function sendReply(page, replyText) {
         if (inputBox) {
             await inputBox.type(replyText, { delay: 50 });
             await page.click('[data-testid="dmComposerSendButton"]');
-            console.log("✅ Reply sent!");
+            console.log("✅ Reply sent.");
         } else {
-            console.log("❌ Could not find message input box.");
+            console.log("❌ Input box not found.");
         }
     } catch (error) {
         console.error("❌ Error sending reply:", error.message);
