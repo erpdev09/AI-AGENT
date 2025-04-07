@@ -1,3 +1,4 @@
+// this is just a sentiment index testing
 const sentimentIndex = (text) => {
     const sentiments = {
         happy: { words: ["joy", "excited", "love", "content", "cheerful"], score: 3 },
