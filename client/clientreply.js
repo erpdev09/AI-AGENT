@@ -2,40 +2,29 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const pool = require("../config/dbconnect");
 const fs = require("fs");
 
-// Load character from characters.json
+// Load character persona
 const character = JSON.parse(fs.readFileSync('../pipeline/sentiment/character.json', 'utf8'));
 
-// Initialize Google Generative AI with Gemini API key
+// Initialize Gemini AI
 const genAI = new GoogleGenerativeAI("");
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-// Fetch tweets from the database
+// Fetch tweets/replies from DB
 const fetchTweetsFromDB = async () => {
   try {
     const tweetQuery = `
-      SELECT tweet_id, text, author 
-      FROM tweets;
+      SELECT tweet_id, the_original_text, author
+      FROM tweets
+      WHERE ai_has_replied = FALSE;
     `;
-    const replyQuery = `
-      SELECT tweet_id, text, author 
-      FROM replies;
-    `;
-
     const tweetsResult = await pool.query(tweetQuery);
-    const repliesResult = await pool.query(replyQuery);
-
-    const repliesMap = {};
-    repliesResult.rows.forEach(reply => {
-      if (!repliesMap[reply.tweet_id]) repliesMap[reply.tweet_id] = [];
-      repliesMap[reply.tweet_id].push({ text: `${reply.text} by ${reply.author}` });
-    });
 
     return tweetsResult.rows.map(tweet => ({
       originalTweet: {
         tweetId: tweet.tweet_id,
-        text: `${tweet.text} by ${tweet.author}`,
+        text: tweet.the_original_text,
+        author: tweet.author,
       },
-      replies: repliesMap[tweet.tweet_id] || [],
     }));
   } catch (error) {
     console.error("Error fetching tweets from DB:", error);
@@ -43,83 +32,47 @@ const fetchTweetsFromDB = async () => {
   }
 };
 
-// Generate AI reply using Elisabeth's character
+// Generate an AI reply for the tweet/reply
 const analyzeTweet = async (tweet) => {
-  if (!tweet.originalTweet || !tweet.originalTweet.text) {
-    console.warn("Skipping tweet: Invalid data format");
+  const { originalTweet } = tweet;
+
+  if (!originalTweet || !originalTweet.text) {
+    console.warn("⚠️ Invalid tweet format. Skipping.");
     return null;
   }
 
-  const originalText = tweet.originalTweet.text;
-  const firstReply = tweet.replies.length > 0 ? tweet.replies[0].text : "No replies yet.";
+  const prompt = `
+you are elisabeth — 18, clever, chaotic, and unpredictable. your voice is sharp, lowercase, funny, and smart. no fluff. no cringe. no obvious replies.
 
-  console.log("\n🔹 Evaluating Tweet Thread...");
-  console.log("Original Tweet:", originalText);
-  console.log("First Reply:", firstReply);
+Bio: ${JSON.stringify(character.bio)}
+Style: ${JSON.stringify(character.style.chat)}
 
-  // Create a character-driven reply prompt for Gemini
-  const characterIntro = `
-You are roleplaying as Elisabeth — an 18-year-old with a brilliant and chaotic mind. She's a witty, clever, and edgy coder who loves JavaScript, spicy chicken wings, crypto (especially Dogecoin), classic rock music, and fish like Nemo and Dory. She lives in Japan, is obsessed with memes and tech culture, and often mixes street smarts with intellectual depth. Her tone is casual, confident, a little flirty, and uses lowercase in casual chats. Avoid emojis. Keep it real, sharp, and surprising.
+This is the user's tweet or reply:
+${originalTweet.text} by ${originalTweet.author}
 
-Here's a deeper look at Elisabeth:
-- **Bio**: ${JSON.stringify(character.bio, null, 2)}
-- **Lore**: ${JSON.stringify(character.lore, null, 2)}
-- **Message Examples**: ${JSON.stringify(character.message_examples, null, 2)}
-- **Style**: ${JSON.stringify(character.style, null, 2)}
-
-Use her voice to reply to the message below. Keep the reply playful, relevant, and infused with her vibe.
-
-Message: "${originalText}"
+write a reply to this user — bold, on-brand, 20–30 words. don’t repeat their text. make it smart and true to elisabeth.
   `;
 
-  const replyPrompt = `
-You are a casual Twitter user. Respond naturally to this conversation:
-  Original Tweet: '${originalText}'
-  Reply: '${firstReply}'
-  Post a reply as a normal user, using Elisabeth's unique tone and style.`;
-
   try {
-    const replyResult = await model.generateContent(characterIntro + replyPrompt);
-    const userReply = replyResult.response.text().trim();
-
-    console.log("🟢 AI Generated Reply:", userReply);
+    const replyResult = await model.generateContent(prompt);
+    const aiReply = replyResult.response.text().trim();
+    console.log("🟢 AI Generated Reply for tweet_id", originalTweet.tweetId, ":", aiReply);
     return {
-      originalTweet: tweet.originalTweet,
-      aiReply: userReply,
+      originalTweet,
+      aiReply,
     };
   } catch (error) {
-    console.error("Error processing Gemini AI request:", error);
+    console.error("❌ Error generating reply for tweet_id", originalTweet.tweetId, ":", error);
     return null;
   }
 };
 
-// Save AI replies to the database
-const saveAIRepliesToDB = async (aiReplies) => {
-  try {
-    for (const reply of aiReplies) {
-      const insertQuery = `
-        INSERT INTO replies (tweet_id, text, author, is_ai_reply)
-        VALUES ($1, $2, $3, $4);
-      `;
-      await pool.query(insertQuery, [
-        reply.originalTweet.tweetId, // tweet_id
-        reply.aiReply,               // text
-        "AI_Bot",                    // author
-        true                         // is_ai_reply
-      ]);
-    }
-    console.log("✅ AI Replies saved to database.");
-  } catch (error) {
-    console.error("❌ Error saving AI replies to DB:", error);
-  }
-};
-
-// Main function to analyze and save replies
-const analyzeAndSaveTweets = async () => {
+// Main execution function
+const analyzeTweets = async () => {
   const tweets = await fetchTweetsFromDB();
   if (tweets.length === 0) {
-    console.log("No tweets found to analyze. Exiting...");
-    return;
+    console.log("📭 No tweets/replies found to process.");
+    return [];
   }
 
   const aiReplies = [];
@@ -128,11 +81,11 @@ const analyzeAndSaveTweets = async () => {
     if (result) aiReplies.push(result);
   }
 
-  if (aiReplies.length > 0) {
-    await saveAIRepliesToDB(aiReplies);
-  } else {
-    console.log("No AI replies generated.");
+  if (aiReplies.length === 0) {
+    console.log("📌 No new AI replies generated.");
   }
+
+  return aiReplies;
 };
 
-module.exports = { analyzeAndSaveTweets };
+module.exports = { analyzeTweets };

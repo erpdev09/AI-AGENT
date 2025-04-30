@@ -1,178 +1,246 @@
-const { analyzeAndSaveTweets } = require('../client/clientreply');
+const { analyzeTweets } = require('../client/clientreply');
 const pool = require('../config/dbconnect');
 
-const isMac = process.platform === 'darwin';
-const modifierKey = isMac ? 'Meta' : 'Control';
+// Define the AI's Twitter/X account name
+const AI_ACCOUNT_NAME = 'Elisabeth'; // Replace with the actual AI account name if different
 
 async function scrapeTweets(page, searchQuery) {
-    console.log("Navigating to search...");
-    await goToLatestSearch(page, searchQuery);
+  console.log("Opening search bar...");
+  await page.waitForSelector('a[href="/explore"]', { visible: true });
+  await page.click('a[href="/explore"]');
 
-    let tweetData = [];
-    const tweets = await page.$$('article[data-testid="tweet"]');
+  console.log("Typing search query...");
+  await page.waitForSelector('input[aria-label="Search query"]', { visible: true });
+  const searchInput = await page.$('input[aria-label="Search query"]');
+  await searchInput.click();
+  await searchInput.type(searchQuery, { delay: 100 });
+  await page.keyboard.press('Enter');
 
-    for (const tweet of tweets) {
-        try {
-            await tweet.click();
-            await page.waitForNetworkIdle({ timeout: 5000 });
+  console.log("Waiting for search results...");
+  await page.waitForNetworkIdle({ timeout: 10000 });
 
-            const threadData = await extractThreadData(page);
-            if (threadData.originalTweet.text) {
-                tweetData.push(threadData);
-                await saveTweetToDatabase(threadData);
-            }
+  console.log("Navigating to 'Latest' tab...");
+  await page.waitForSelector('a[role="tab"][href*="f=live"]', { visible: true });
+  await page.click('a[role="tab"][href*="f=live"]');
+  await page.waitForNetworkIdle({ timeout: 5000 });
 
-            await page.goBack();
-            await page.waitForNetworkIdle({ timeout: 5000 });
-        } catch (err) {
-            console.error("Error processing tweet:", err);
-        }
-    }
+  let tweetData = [];
+  let tweets = await page.$$('article[data-testid="tweet"]');
 
-    if (tweetData.length === 0) {
-        console.log("No tweets scraped.");
-        return tweetData;
-    }
+  for (const tweet of tweets) {
+    try {
+      console.log("Clicking on tweet to open thread...");
+      await tweet.click();
+      await page.waitForNetworkIdle({ timeout: 5000 });
 
-    console.log("Analyzing tweets...");
-    await analyzeAndSaveTweets();
-    const aiReplies = await loadAIRepliesFromDB();
-
-    const freshTweets = await page.$$('article[data-testid="tweet"]');
-    for (const [index, tweet] of freshTweets.entries()) {
-        if (index >= tweetData.length) break;
-        try {
-            await tweet.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            await tweet.click();
-            await page.waitForNetworkIdle({ timeout: 5000 });
-
-            const thread = tweetData[index];
-            const aiReply = aiReplies.find(r => r.originalTweet.tweetId.toString() === thread.originalTweet.tweetId.toString());
-            const replyText = aiReply?.aiReply || "Looks like the AI didn’t generate a reply for this one. Here’s a default response!";
-
-            await attemptReply(page, replyText);
-            await page.goBack();
-            await page.waitForNetworkIdle({ timeout: 5000 });
-        } catch (err) {
-            console.error("Error replying to tweet:", err);
-        }
-    }
-
-    return tweetData;
-}
-
-async function goToLatestSearch(page, query) {
-    await page.waitForSelector('a[href="/explore"]', { visible: true });
-    await page.click('a[href="/explore"]');
-
-    await page.waitForSelector('input[aria-label="Search query"]', { visible: true });
-    const input = await page.$('input[aria-label="Search query"]');
-    await input.click();
-    await input.type(query, { delay: 100 });
-    await page.keyboard.press('Enter');
-
-    await page.waitForNetworkIdle({ timeout: 10000 });
-
-    await page.waitForSelector('a[role="tab"][href*="f=live"]', { visible: true });
-    await page.click('a[role="tab"][href*="f=live"]');
-    await page.waitForNetworkIdle({ timeout: 5000 });
-}
-
-async function extractThreadData(page) {
-    return await page.evaluate(() => {
+      const threadData = await page.evaluate((aiAccountName) => {
         const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
-        const getText = el => el?.innerText || '';
-        const getId = el => el?.getAttribute('data-tweet-id') || Math.floor(Math.random() * 1e18);
+        const originalTweet = articles[0];
+        const originalAuthor = originalTweet?.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[0] || 'Unknown';
+        const originalTweetText = originalTweet?.querySelector('div[data-testid="tweetText"]')?.innerText || '';
+        const originalTweetId = originalTweet?.querySelector('time')?.parentElement?.href?.match(/status\/(\d+)/)?.[1] || null;
 
-        const original = articles[0];
-        const originalAuthor = getText(original?.querySelector('div[data-testid="User-Name"]')).split('\n')[0] || 'Unknown';
-        const originalText = getText(original?.querySelector('div[data-testid="tweetText"]'));
-        const originalId = getId(original);
+        if (!originalTweetId) return null;
 
         const replies = articles.slice(1).map(reply => {
-            const author = getText(reply.querySelector('div[data-testid="User-Name"]')).split('\n')[0] || 'Unknown';
-            const text = getText(reply.querySelector('div[data-testid="tweetText"]'));
-            return {
-                replyId: getId(reply),
-                text: `${text} by ${author}`
-            };
-        });
+          const replyAuthor = reply.querySelector('div[data-testid="User-Name"]')?.innerText.split('\n')[0] || 'Unknown';
+          // Skip replies from the AI's own account
+          if (replyAuthor === aiAccountName) return null;
+          const replyText = reply.querySelector('div[data-testid="tweetText"]')?.innerText || '';
+          const replyId = reply.querySelector('time')?.parentElement?.href?.match(/status\/(\d+)/)?.[1] || null;
+          if (!replyId || !replyText) return null;
+          return { tweetId: replyId, text: replyText, author: replyAuthor };
+        }).filter(reply => reply !== null);
 
         return {
-            originalTweet: {
-                tweetId: originalId,
-                text: `${originalText} by ${originalAuthor}`,
-                author: originalAuthor
-            },
-            replies
+          originalTweet: { tweetId: originalTweetId, text: originalTweetText, author: originalAuthor },
+          replies
         };
-    });
-}
+      }, AI_ACCOUNT_NAME);
 
-async function saveTweetToDatabase({ originalTweet, replies }) {
-    const client = await pool.connect();
+      if (!threadData || !threadData.originalTweet.text || !threadData.originalTweet.tweetId) {
+        console.log("⚠️ Invalid tweet data. Skipping.");
+        await page.goBack();
+        await page.waitForNetworkIdle({ timeout: 5000 });
+        continue;
+      }
+
+      // Store original tweet and replies
+      tweetData.push(threadData);
+      await saveTweetToDatabase(threadData);
+
+      console.log("Returning to search results...");
+      await page.goBack();
+      await page.waitForNetworkIdle({ timeout: 5000 });
+    } catch (error) {
+      console.error("Error processing tweet:", error);
+      continue;
+    }
+  }
+
+  if (tweetData.length === 0) {
+    console.log("No tweets scraped. Exiting...");
+    return tweetData;
+  }
+
+  console.log("Extracted tweet threads and replies:");
+  console.log(JSON.stringify(tweetData, null, 2));
+
+  console.log("Analyzing tweets/replies and generating AI responses...");
+  const aiReplies = await analyzeTweets();
+
+  // Reply to replies
+  tweets = await page.$$('article[data-testid="tweet"]'); // Re-query to avoid stale elements
+  for (const [index, tweet] of tweets.entries()) {
+    if (index >= tweetData.length) break;
+
+    const threadData = tweetData[index];
+    const replies = threadData.replies || [];
+
+    if (replies.length === 0) {
+      console.log(`⏭️ No replies found for tweet_id ${threadData.originalTweet.tweetId}. Skipping.`);
+      continue;
+    }
+
     try {
-        await client.query(
-            `INSERT INTO tweets (tweet_id, text, author) VALUES ($1, $2, $3) ON CONFLICT (tweet_id) DO NOTHING;`,
-            [originalTweet.tweetId, originalTweet.text, originalTweet.author]
-        );
+      console.log(`Clicking on tweet_id ${threadData.originalTweet.tweetId} to open thread for replying...`);
+      await page.waitForSelector('article[data-testid="tweet"]', { visible: true, timeout: 10000 });
+      await tweet.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await tweet.click();
+      await page.waitForNetworkIdle({ timeout: 5000 });
 
-        for (const reply of replies) {
-            await client.query(
-                `INSERT INTO replies (tweet_id, text, author) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;`,
-                [originalTweet.tweetId, reply.text, reply.text.split(' by ').pop()]
-            );
+      for (const reply of replies) {
+        // Double-check to skip AI's own replies
+        if (reply.author === AI_ACCOUNT_NAME) {
+          console.log(`⏭️ Skipping reply_id ${reply.tweetId} by ${AI_ACCOUNT_NAME} (AI's own account).`);
+          continue;
         }
 
-        console.log(`Saved tweet ${originalTweet.tweetId}`);
-    } catch (err) {
-        console.error("DB error:", err);
-    } finally {
-        client.release();
+        const aiReplyData = aiReplies.find(r => 
+          r.originalTweet.tweetId.toString() === reply.tweetId.toString()
+        );
+
+        if (!aiReplyData) {
+          console.log(`⏭️ AI own replies so alreadyed replied on this tweet ${reply.tweetId}. Skipping.`);
+          continue;
+        }
+
+        // Check if reply has already been responded to
+        const checkQuery = `SELECT ai_has_replied FROM tweets WHERE tweet_id = $1;`;
+        const checkResult = await pool.query(checkQuery, [reply.tweetId]);
+        if (checkResult.rows.length > 0 && checkResult.rows[0].ai_has_replied) {
+          console.log(`⏭️ Reply ID ${reply.tweetId} already replied. Skipping.`);
+          continue;
+        }
+
+        console.log(`Attempting to reply to reply_id ${reply.tweetId} by ${reply.author}...`);
+        // Navigate to the specific reply
+        const replySelector = `a[href*="/status/${reply.tweetId}"]`;
+        try {
+          await page.waitForSelector(replySelector, { visible: true, timeout: 5000 });
+          await page.click(replySelector);
+          await page.waitForNetworkIdle({ timeout: 5000 });
+
+          await attemptReply(page, aiReplyData.aiReply);
+
+          // Update database after successful reply
+          await pool.query(
+            `UPDATE tweets 
+             SET ai_has_replied = TRUE, ai_replied_text = $1 
+             WHERE tweet_id = $2;`,
+            [aiReplyData.aiReply, reply.tweetId]
+          );
+          console.log(`💾 Database updated for reply_id ${reply.tweetId}`);
+
+          await page.goBack();
+          await page.waitForNetworkIdle({ timeout: 5000 });
+        } catch (error) {
+          console.error(`Error replying to reply_id ${reply.tweetId}:`, error);
+          await page.screenshot({ path: `temp/reply_error_${reply.tweetId}.png` });
+          continue;
+        }
+      }
+
+      console.log("Returning to search results...");
+      await page.goBack();
+      await page.waitForNetworkIdle({ timeout: 5000 });
+    } catch (error) {
+      console.error(`Error processing tweet_id ${threadData.originalTweet.tweetId}:`, error);
+      await page.screenshot({ path: `temp/reply_error_${threadData.originalTweet.tweetId}.png` });
+      await page.goBack();
+      await page.waitForNetworkIdle({ timeout: 5000 });
+      continue;
     }
+  }
+
+  console.log("Final Scraped Data:", tweetData);
+  return tweetData;
 }
 
-async function loadAIRepliesFromDB() {
-    try {
-        const res = await pool.query(`
-            SELECT t.tweet_id, t.text AS original_text, t.author AS original_author, r.text AS ai_reply
-            FROM tweets t
-            JOIN replies r ON t.tweet_id = r.tweet_id
-            WHERE r.is_ai_reply = TRUE AND r.author = 'AI_Bot'
-            ORDER BY r.reply_id DESC;
-        `);
+async function saveTweetToDatabase(threadData) {
+  const client = await pool.connect();
+  try {
+    const { originalTweet, replies } = threadData;
 
-        return res.rows.map(row => ({
-            originalTweet: {
-                tweetId: row.tweet_id,
-                text: `${row.original_text} by ${row.original_author}`,
-            },
-            aiReply: row.ai_reply
-        }));
-    } catch (err) {
-        console.error("DB load error:", err);
-        return [];
+    // Save original tweet
+    await client.query(
+      `INSERT INTO tweets (tweet_id, the_original_text, author) 
+       VALUES ($1, $2, $3) 
+       ON CONFLICT (tweet_id) DO NOTHING;`,
+      [originalTweet.tweetId, originalTweet.text, originalTweet.author]
+    );
+    console.log(`Saved original tweet for Tweet ID: ${originalTweet.tweetId}`);
+
+    // Save replies
+    for (const reply of replies) {
+      await client.query(
+        `INSERT INTO tweets (tweet_id, the_original_text, author) 
+         VALUES ($1, $2, $3) 
+         ON CONFLICT (tweet_id) DO NOTHING;`,
+        [reply.tweetId, reply.text, reply.author]
+      );
+      console.log(`Saved reply for Reply ID: ${reply.tweetId}`);
     }
+  } catch (err) {
+    console.error("Database error:", err);
+  } finally {
+    client.release();
+  }
 }
 
 async function attemptReply(page, replyText) {
-    try {
-        await page.waitForSelector('div[role="textbox"][data-testid="tweetTextarea_0"]', { visible: true, timeout: 10000 });
-        const replyBox = await page.$('div[role="textbox"][data-testid="tweetTextarea_0"]');
+  try {
+    await page.waitForSelector('div[role="textbox"][data-testid="tweetTextarea_0"]', { visible: true, timeout: 10000 });
+    const replyBox = await page.$('div[role="textbox"][data-testid="tweetTextarea_0"]');
+    
+    await replyBox.focus();
+    await page.keyboard.type(replyText, { delay: 50 });
 
-        await replyBox.focus();
-        await page.keyboard.type(replyText, { delay: 50 });
+    // Determine the platform and use appropriate key combination
+    const platform = process.platform;
+    console.log(`Detected platform: ${platform}`);
 
-        await page.keyboard.down(modifierKey);
-        await page.keyboard.press('Enter');
-        await page.keyboard.up(modifierKey);
-
-        await page.waitForNetworkIdle({ timeout: 5000 });
-        console.log(`Posted reply: '${replyText}'`);
-    } catch (err) {
-        console.error("Reply error:", err);
-        await page.screenshot({ path: 'temp/reply_error.png' });
+    if (platform === 'darwin') {
+      // Mac: Use Cmd + Enter
+      await page.keyboard.down('Meta'); // 'Meta' is the Command key
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Meta');
+      console.log(`Posted reply using Cmd+Enter for Mac: '${replyText}'`);
+    } else {
+      // Windows/Linux: Use Ctrl + Enter
+      await page.keyboard.down('Control');
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Control');
+      console.log(`Posted reply using Ctrl+Enter for ${platform}: '${replyText}'`);
     }
+
+    await page.waitForNetworkIdle({ timeout: 5000 });
+    console.log(`Successfully posted reply: '${replyText}'`);
+  } catch (replyError) {
+    console.error("Failed to post reply:", replyError);
+    await page.screenshot({ path: 'temp/reply_error.png' });
+    throw replyError;
+  }
 }
 
 module.exports = scrapeTweets;

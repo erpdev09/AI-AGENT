@@ -1,12 +1,14 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 
-// Load character from characters.json
+// ✅ Load character from JSON
 const character = JSON.parse(fs.readFileSync('../pipeline/sentiment/character.json', 'utf8'));
 
-const genAI = new GoogleGenerativeAI('AIzaSyC8KSNDegtuEXpxNjdLenFxkwiuyOyKuX8');
+// ✅ Initialize Gemini model
+const genAI = new GoogleGenerativeAI('');
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
+// 🔍 Main function: Check unread DMs and reply
 async function checkAndScrapeUnreadDMs(page) {
   try {
     console.log("Navigating to X DMs...");
@@ -94,22 +96,21 @@ async function checkAndScrapeUnreadDMs(page) {
   }
 }
 
-// 🔮 Gemini-based AI reply with Elisabeth's character traits
-// 🔮 Gemini-based AI reply with Elisabeth's updated tone and style
+// 🤖 Generate AI reply with character traits from character.json
 async function generateAIReply(conversationHistory) {
   try {
     const formattedHistory = conversationHistory.map(m => `${m.sender}: ${m.text}`).join('\n');
 
     const characterIntro = `
-you’re elisabeth — 18, clever, chaotic, and unpredictable. you thrive in the noise, love flipping the script, and never say the obvious thing.
+you’re ${character.name} — ${character.age}, ${character.style}. ${character.quirks}.
 
-your tone is fun, sharp, and real. lowercase is your style. you don’t fake hype or play it safe. stay unexpected. stay smart.
+your tone is ${character.tone}. stay unexpected. stay smart.
 
 reply to the last message from "them" in this dm conversation. keep it short — 30 to 40 words. make it hit.
 
 ${formattedHistory}
 
-elisabeth's reply:
+${character.name}'s reply:
     `;
 
     const replyResult = await model.generateContent(characterIntro);
@@ -120,8 +121,7 @@ elisabeth's reply:
   }
 }
 
-
-// 💬 Send reply in the DM
+// ✍️ Send the AI-generated reply
 async function sendReply(page, replyText) {
   try {
     await page.waitForSelector('[data-testid="dmComposerTextInput"]', { visible: true, timeout: 10000 });
