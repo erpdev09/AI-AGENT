@@ -4,7 +4,7 @@ const fs = require('fs');
 // Load character from characters.json
 const character = JSON.parse(fs.readFileSync('../pipeline/sentiment/character.json', 'utf8'));
 
-const genAI = new GoogleGenerativeAI('AIzaSyDVT7gUed34cz4cw49rMRJQiK_loWRO3wM');
+const genAI = new GoogleGenerativeAI('AIzaSyC8KSNDegtuEXpxNjdLenFxkwiuyOyKuX8');
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 async function checkAndScrapeUnreadDMs(page) {
