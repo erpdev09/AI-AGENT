@@ -1,22 +1,22 @@
-
+require('dotenv').config();
 const puppeteer = require('puppeteer');
-const login = require('./login');
-const scrapeTweets = require('./scrape');
-const scrollTwitterFeed = require('../client/scroll');
-const checkAndScrapeUnreadDMs = require('../client/replydm');
+const login = require('./login'); // Assuming login.js is in the same directory
+const scrapeTweets = require('./scrape'); // Assuming scrape.js is in the same directory
+const scrollTwitterFeed = require('../client/scroll'); // Assuming scroll.js is in client folder
+const checkAndScrapeUnreadDMs = require('../client/replydm'); // Assuming replydm.js is in client folder
 
 (async () => {
   const browser = await puppeteer.launch({ headless: false });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });
 
-  const username = 'Elisabethxbt';
-  const password = 'Takemyheart@1';
-  const searchQuery = '@Elisabethxbt';
+  const username = process.env.TWITTER_USERNAME;
+  const password = process.env.TWITTER_PASSWORD;
+  const searchQuery = process.env.TWITTER_SEARCH_QUERY;
 
   // Log in to X
   try {
-    await login(page, username, password);
+    await login(page, username, password); // Make sure login.js handles the login process
   } catch (error) {
     console.error('❌ Login failed:', error.message);
     await browser.close();
@@ -60,69 +60,3 @@ const checkAndScrapeUnreadDMs = require('../client/replydm');
   // Note: The loop is infinite, so this line won't be reached unless the script is stopped
   await browser.close();
 })();
-
-// const puppeteer = require('puppeteer');
-// const login = require('./login');
-// const scrapeTweets = require('./scrape');
-// const scrollTwitterFeed = require('../client/scroll');
-// const checkAndScrapeUnreadDMs = require('../client/replydm');
-
-// (async () => {
-//   const browser = await puppeteer.launch({ headless: false });
-//   const page = await browser.newPage();
-//   await page.setViewport({ width: 1280, height: 800 });
-
-//   const username = 'Elisabethxbt';
-//   const password = 'Takemyheart@1';
-//   const searchQuery = '@Elisabethxbt';
-
-//   // Log in to X
-//   await login(page, username, password);
-
-//   // Scrape tweets once
-//   console.log("Scrape round 1");
-//   const tweets = await scrapeTweets(page, searchQuery);
-//   console.log("Scraped Tweets:", tweets);
-
-//   // Wait briefly before scrolling
-//   await new Promise(resolve => setTimeout(resolve, 15000));
-
-//   // Run scroll logic
-//   await scrollTwitterFeed(page);
-
-//   // Run DM reply logic using the same session
-//   console.log("Starting DM reply process...");
-//   await checkAndScrapeUnreadDMs(page);
-
-//   // Close the browser
-//   await browser.close();
-// })();
-
-
-// const puppeteer = require('puppeteer');
-// const login = require('./login');
-// const scrapeTweets = require('./scrape');
-// const scrollTwitterFeed = require('../client/scroll');
-
-// (async () => {
-//     const browser = await puppeteer.launch({ headless: false });
-//     const page = await browser.newPage();
-//     await page.setViewport({ width: 1280, height: 800 });
-
-//     const username = 'Elisabethxbt';
-//     const password = 'Takemyheart@1';
-//     const searchQuery = '@Elisabethxbt';
-
-//     await login(page, username, password);
-
-//     for (let i = 0; i < 2; i++) {
-//         console.log(`Scrape round ${i + 1}`);
-//         const tweets = await scrapeTweets(page, searchQuery);
-//         console.log("Scraped Tweets:", tweets);
-//         await new Promise(resolve => setTimeout(resolve, 15000));
-//     }
-
-//     // Now run scroll logic using the same session
-//     await scrollTwitterFeed(page);
-
-// })();
