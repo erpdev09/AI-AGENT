@@ -1,5 +1,14 @@
-require('dotenv').config(); // Load environment variables from .env
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
+// Check if the environment variables are loaded correctly
+console.log('DB_USER:', process.env.DB_USER);
+console.log('DB_HOST:', process.env.DB_HOST);
+console.log('DB_NAME:', process.env.DB_NAME);
+console.log('DB_PASSWORD:', process.env.DB_PASSWORD);
+console.log('DB_PORT:', process.env.DB_PORT);
+
+// Set up PostgreSQL Pool
 const { Pool } = require('pg');
 
 const pool = new Pool({
