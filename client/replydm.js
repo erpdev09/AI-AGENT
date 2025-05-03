@@ -1,3 +1,4 @@
+/* Handles the reply to dm and unread dms~ */
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 
@@ -5,7 +6,7 @@ const fs = require('fs');
 const character = JSON.parse(fs.readFileSync('../pipeline/sentiment/character.json', 'utf8'));
 
 // ✅ Initialize Gemini model
-const genAI = new GoogleGenerativeAI('AIzaSyBqEWiMUW09KiJnAzdj273-l0xHg7vpPjs');
+const genAI = new GoogleGenerativeAI('');
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 // 🔍 Main function: Check unread DMs and reply

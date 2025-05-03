@@ -1,3 +1,6 @@
+
+
+/*  This handle the scrolling on the feeds and liking the post randomly */
 async function scrollTwitterFeed(page) {
     try {
       console.log("🕒 Waiting for home timeline to load...");
@@ -8,6 +11,9 @@ async function scrollTwitterFeed(page) {
       const scrollCount = 1; // Total number of scrolls
       let totalLikes = 0;
       let alreadyLiked = 0;
+
+
+
   
       for (let i = 0; i < scrollCount; i++) {
         console.log(`🌀 Scroll ${i + 1} of ${scrollCount}`);
