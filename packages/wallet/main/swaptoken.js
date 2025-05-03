@@ -5,7 +5,7 @@ const { SolanaTracker } = require('solana-swap');
 async function swap() {
   // Initialize wallet
   const keypair = Keypair.fromSecretKey(
-    bs58.decode("5Uig5h1njCLhQRXFB1v51BuSgcLYYVHkfu4B6EnZoYSYTs9ssxzsi4ffmHXaKzvrCkoLvPYMVwC3XdERiNLkTRLX")
+    bs58.decode("")
   );
 
   // Create instance with RPC endpoint

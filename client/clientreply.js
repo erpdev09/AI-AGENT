@@ -7,7 +7,7 @@ const fs = require("fs");
 const character = JSON.parse(fs.readFileSync('../pipeline/sentiment/character.json', 'utf8'));
 
 // Initialize Gemini AI
-const genAI = new GoogleGenerativeAI('AIzaSyDAniQcSzYVdF-AvoD6ZM5Ebef6dyQock0');
+const genAI = new GoogleGenerativeAI('');
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // Fetch tweets/replies from DB

@@ -1,51 +1,43 @@
+// packages/wallet/swap/swap.js
 const { Keypair } = require('@solana/web3.js');
 const bs58 = require('bs58');
 const { SolanaTracker } = require('solana-swap');
+require('dotenv').config();
 
-async function swap() {
-  // Initialize wallet
-  const keypair = Keypair.fromSecretKey(
-    bs58.decode("5Uig5h1njCLhQRXFB1v51BuSgcLYYVHkfu4B6EnZoYSYTs9ssxzsi4ffmHXaKzvrCkoLvPYMVwC3XdERiNLkTRLX")
-  );
+async function swap({ fromToken, toToken, amount, slippage = 20, priorityFee = 0.00005 }) {
+  const secretKeyBase58 = process.env.SOLANA_PRIVATE_KEY;
+  if (!secretKeyBase58) throw new Error("Missing SOLANA_PRIVATE_KEY in .env");
 
-  // Create instance with RPC endpoint
+  const keypair = Keypair.fromSecretKey(bs58.decode(secretKeyBase58));
+
   const solanaTracker = new SolanaTracker(
     keypair,
     "https://api.mainnet-beta.solana.com"
   );
 
-  // Get swap instructions
   const swapResponse = await solanaTracker.getSwapInstructions(
-    "So11111111111111111111111111111111111111112", // From Token (SOL)
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // To Token (USDC)
-    0.00001,                                       // Amount to swap
-    20,                                            // Slippage (%)
-    keypair.publicKey.toBase58(),                 // Payer public key
-    0.00005                                        // Priority fee
+    fromToken,
+    toToken,
+    amount,
+    slippage,
+    keypair.publicKey.toBase58(),
+    priorityFee
   );
 
-  // Log swap response
   console.log("Swap Response:", JSON.stringify(swapResponse, null, 2));
 
-  // Execute the swap
-  try {
-    const txid = await solanaTracker.performSwap(swapResponse, {
-      sendOptions: { skipPreflight: true },
-      confirmationRetries: 30,
-      confirmationRetryTimeout: 500,
-      lastValidBlockHeightBuffer: 150,
-      resendInterval: 1000,
-      confirmationCheckInterval: 1000,
-      commitment: "processed",
-      skipConfirmationCheck: false
-    });
+  const txid = await solanaTracker.performSwap(swapResponse, {
+    sendOptions: { skipPreflight: true },
+    confirmationRetries: 30,
+    confirmationRetryTimeout: 500,
+    lastValidBlockHeightBuffer: 150,
+    resendInterval: 1000,
+    confirmationCheckInterval: 1000,
+    commitment: "processed",
+    skipConfirmationCheck: false
+  });
 
-    console.log("Transaction ID:", txid);
-    console.log("Transaction URL:", `https://solscan.io/tx/${txid}`);
-  } catch (error) {
-    const { signature, message } = error;
-    console.error("Error performing swap:", message, signature);
-  }
+  return txid;
 }
 
-swap();
+module.exports = { swap };

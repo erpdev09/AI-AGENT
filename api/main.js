@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+const { swap } = require('../packages/wallet/swaptoken/swap');
 
 const { Connection, Keypair, Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 const bs58 = require('bs58');
@@ -97,6 +98,46 @@ app.get('/api/sendspltoken/:contractaddress/:amount/:recipient', async (req, res
     const errorResponse = { error: 'SPL token transfer failed', details: err.message };
     console.error(errorResponse);
     res.status(500).json(errorResponse);
+  }
+});
+
+//Swap function code 
+
+
+app.get('/swaptoken/:totoken/:foramount', async (req, res) => {
+  const { totoken, foramount } = req.params;
+  try {
+    const txid = await swap({
+      fromToken: "So11111111111111111111111111111111111111112", // SOL
+      toToken: totoken,
+      amount: parseFloat(foramount),
+    });
+    res.json({
+      message: "Swap successful",
+      txid,
+      explorer: `https://solscan.io/tx/${txid}`
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Swap failed', details: err.message });
+  }
+});
+
+// === Swap from any token to any token ===
+app.get('/swaptoken/:from/:to/:amount', async (req, res) => {
+  const { from, to, amount } = req.params;
+  try {
+    const txid = await swap({
+      fromToken: from,
+      toToken: to,
+      amount: parseFloat(amount),
+    });
+    res.json({
+      message: "Swap successful",
+      txid,
+      explorer: `https://solscan.io/tx/${txid}`
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Swap failed', details: err.message });
   }
 });
 
