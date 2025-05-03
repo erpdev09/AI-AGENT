@@ -86,9 +86,9 @@ const value = 1000;
 
 
 // Solana token transfer Native Token
-const feePayerSecretKey = '2PHT1eTgt7snY8eRtM9hMnUXnbzojZ23ZTgZrx6QAktNwEDkyGYyfNsxqF7Ar11ZkarKvSNMmb4aNjeVeNbnfiHV';
-const aliceSecretKey = '2PHT1eTgt7snY8eRtM9hMnUXnbzojZ23ZTgZrx6QAktNwEDkyGYyfNsxqF7Ar11ZkarKvSNMmb4aNjeVeNbnfiHV';
-const toPublicKey = '4MWwxzWsWmHrsbfPFwE6LDq471nqNeNMsD6DS7y8nruw';
+const feePayerSecretKey = '';
+const aliceSecretKey = '';
+const toPublicKey = '';
 const amount = 0.01;
 (async () => {
     await solnativetransfer(feePayerSecretKey, aliceSecretKey, toPublicKey, amount);
@@ -96,9 +96,9 @@ const amount = 0.01;
   
 
   // Solana SPL Token transfer 
-  const privateKeyHex = '38a898a1d1498977434d74e7cb3eadea59392507c3dedd6640bc2d30c2830ab10bd421ca505bb75d57b690730541d0edaff632fa46c9f1df48b5677da0b85a3e';
-const DESTINATION_WALLET = 'AnqDhc9zvUpEiGAqHD1yEqmJVYaxKPfUszG3iEEBAocH';
-const MINT_ADDRESS = 'Cva8hRDik6KhMJPrRyN3SebKQJyhNcJzzMh74eaVQN6Z'; // You must change this value!
+  const privateKeyHex =  [223,248,172,222,170,24,124,35,139,166,25,46,194,129,38,62,37,34,104,15,132,137,26,68,27,120,149,0,198,62,68,228,255,11,222,110,41,90,149,67,31,20,185,40,166,244,176,233,63,65,94,86,186,103,55,126,97,219,124,142,229,133,176,44];
+const DESTINATION_WALLET = 'FDRd4BfnAsMhusifdsSrxrJyHtpLsoPUrDB1HzAzghix';
+const MINT_ADDRESS = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // You must change this value!
 const TRANSFER_AMOUNT = 1;
 
 spltokentransfer(privateKeyHex, DESTINATION_WALLET, MINT_ADDRESS, TRANSFER_AMOUNT);

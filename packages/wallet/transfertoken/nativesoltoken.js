@@ -1,35 +1,53 @@
-// solnativetransfer.js
+const express = require('express');
 const { Connection, Keypair, Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 const bs58 = require('bs58');
+require('dotenv').config(); // for storing private key in .env
 
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Setup Solana devnet connection
 const connection = new Connection('https://api.devnet.solana.com');
 
-async function solnativetransfer(feePayerSecretKey, aliceSecretKey, toPublicKeyStr, amountSOL) {
-  const feePayer = Keypair.fromSecretKey(bs58.decode(feePayerSecretKey));
-  const alice = Keypair.fromSecretKey(bs58.decode(aliceSecretKey));
-  const toPublicKey = new PublicKey(toPublicKeyStr);
+// Load sender's private key from env
+const secretKey = bs58.decode(process.env.SOLANA_PRIVATE_KEY);
+const sender = Keypair.fromSecretKey(secretKey);
 
-  const balance = await connection.getBalance(alice.publicKey);
-  console.log(`Alice's balance: ${balance / LAMPORTS_PER_SOL} SOL`);
+app.get('/transfertoken/:amount/:recipient', async (req, res) => {
+  try {
+    const amountSOL = parseFloat(req.params.amount);
+    const toPublicKeyStr = req.params.recipient;
+    const toPublicKey = new PublicKey(toPublicKeyStr);
 
-  const amount = amountSOL * LAMPORTS_PER_SOL;
+    if (isNaN(amountSOL) || amountSOL <= 0) {
+      return res.status(400).json({ error: 'Invalid amount' });
+    }
 
-  if (balance < amount + 0.002 * LAMPORTS_PER_SOL) {
-    console.log('Insufficient balance');
-    return;
+    const balance = await connection.getBalance(sender.publicKey);
+    const amountLamports = amountSOL * LAMPORTS_PER_SOL;
+
+    if (balance < amountLamports + 0.002 * LAMPORTS_PER_SOL) {
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
+
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: sender.publicKey,
+        toPubkey: toPublicKey,
+        lamports: amountLamports,
+      })
+    );
+    tx.feePayer = sender.publicKey;
+
+    const txhash = await connection.sendTransaction(tx, [sender]);
+
+    res.json({ message: 'Transfer successful', transactionHash: txhash });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Transfer failed', details: err.message });
   }
+});
 
-  const tx = new Transaction().add(
-    SystemProgram.transfer({
-      fromPubkey: alice.publicKey,
-      toPubkey: toPublicKey,
-      lamports: amount,
-    })
-  );
-  tx.feePayer = feePayer.publicKey;
-
-  const txhash = await connection.sendTransaction(tx, [feePayer, alice]);
-  console.log(`Transaction hash: ${txhash}`);
-}
-
-module.exports = { solnativetransfer };
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});

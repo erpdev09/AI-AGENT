@@ -4,7 +4,7 @@ async function queryWeaviate() {
   const query = `
     query {
       Get {
-        SocialPost(nearText: {concepts: ["dirty"]}) {
+        SocialPost(nearText: {concepts: ["suhaim"]}) {
           text
           user
           timestamp
