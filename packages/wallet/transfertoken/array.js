@@ -2,7 +2,7 @@ const bs58 = require('bs58');
 const { Keypair } = require('@solana/web3.js');
 
 // Replace with your actual private key string
-const privateKeyBase58 = '5Uig5h1njCLhQRXFB1v51BuSgcLYYVHkfu4B6EnZoYSYTs9ssxzsi4ffmHXaKzvrCkoLvPYMVwC3XdERiNLkTRLX';
+const privateKeyBase58 = '';
 
 // Decode base58 to Uint8Array
 const secretKey = bs58.decode(privateKeyBase58);
