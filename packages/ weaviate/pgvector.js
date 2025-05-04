@@ -1,7 +1,7 @@
 const { Pool } = require('pg');
 const weaviate = require('weaviate-client');
 
-// PostgreSQL connection
+// PostgreSQL connection pool
 const pool = new Pool({
   user: 'myuser',
   host: 'localhost',
@@ -10,85 +10,129 @@ const pool = new Pool({
   port: 5432,
 });
 
-// Initialize Weaviate
+// Initialize Weaviate client
 async function initializeClient() {
   const client = weaviate.client({
     scheme: 'http',
-    host: 'localhost:8080', // adjust if needed
+    host: 'localhost:8080',
   });
-
   await client.misc.metaGetter().do(); // test connection
   return client;
 }
 
-// Main function
-async function main() {
+// 🔍 Extract contract, token amount, keywords, and token symbol
+function extractSolanaData(content) {
+  const base58Regex = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
+  const amountRegex = /\b\d{1,3}(?:\.\d{1,9})?\b/g;
+  const keywordsList = ['swap', 'send', 'transfer', 'transferred', 'sending', 'swapped'];
+  const symbolsList = ['sol', 'solana', 'usdc', 'usdt', 'bonk', 'jito'];
+
+  const contracts = [];
+  const tokenAmounts = [];
+  const keywords = [];
+  const symbols = [];
+
+  const lowerContent = content.toLowerCase();
+
+  const contractMatches = content.match(base58Regex);
+  if (contractMatches) contracts.push(...contractMatches);
+
+  const amountMatches = content.match(amountRegex);
+  if (amountMatches) {
+    amountMatches.forEach(val => {
+      const num = parseFloat(val);
+      if (!isNaN(num) && num >= 0 && num <= 1000) {
+        tokenAmounts.push(num);
+      }
+    });
+  }
+
+  keywordsList.forEach(k => {
+    if (lowerContent.includes(k)) keywords.push(k);
+  });
+
+  symbolsList.forEach(s => {
+    if (lowerContent.includes(s)) symbols.push(s);
+  });
+
+  return { contracts, tokenAmounts, keywords, symbols };
+}
+
+// 🚀 Main function
+async function syncTweetsAndSearch(searchQuery = 'solana') {
   const client = await initializeClient();
 
-  // Delete schema if exists
   try {
     await client.schema.classDeleter().withClassName('Tweet').do();
   } catch (err) {
-    // Ignore if class doesn't exist
+    // Ignore if schema doesn't exist
   }
 
-  // Create schema in Weaviate
+  // ✅ Create schema
   const schema = {
     class: 'Tweet',
     description: 'Stores social media tweets',
     vectorizer: 'text2vec-transformers',
-    moduleConfig: {
-      'text2vec-transformers': {},
-    },
+    moduleConfig: { 'text2vec-transformers': {} },
     properties: [
-      { name: 'tweet_id', dataType: ['string'] }, // Store tweet_id
-      { name: 'text', dataType: ['text'] }, // Maps to the_original_text
-      { name: 'author', dataType: ['string'] },
-      { name: 'timestamp', dataType: ['date'] }, // Store timestamp
-      { name: 'ai_reply', dataType: ['text'] }, // Maps to ai_replied_text
-      { name: 'is_ai_replied', dataType: ['boolean'] }, // Maps to ai_has_replied
+      { name: 'tweet_id', dataType: ['string'] },
+      { name: 'user_name', dataType: ['string'] },
+      { name: 'content', dataType: ['text'] },
+      { name: 'tweet_link', dataType: ['string'] },
+      { name: 'tweet_link_extra', dataType: ['string'] },
+      { name: 'is_replied_tweet', dataType: ['boolean'] },
+      { name: 'is_direct_tag', dataType: ['boolean'] },
+      { name: 'created_at', dataType: ['date'] },
+      { name: 'updated_at', dataType: ['date'] },
+      { name: 'action_perform', dataType: ['string'] },
     ],
   };
   await client.schema.classCreator().withClass(schema).do();
-  console.log('Schema created in Weaviate');
+  console.log('✅ Schema created in Weaviate');
 
-  // Fetch tweets from Postgres
-  const res = await pool.query('SELECT tweet_id, the_original_text, author, timestamp, ai_has_replied, ai_replied_text FROM tweets');
+  // 📥 Fetch tweets
+  const res = await pool.query(`
+    SELECT tweet_id, user_name, tweet_content, tweet_link, tweet_link_extra,
+           is_replied_tweet, is_direct_tag, created_at, updated_at, action_perform
+    FROM tweets1
+  `);
   const tweets = res.rows;
 
-  // Insert tweets into Weaviate
+  // 🔄 Insert into Weaviate
   for (const tweet of tweets) {
     await client.data.creator().withClassName('Tweet').withProperties({
-      tweet_id: tweet.tweet_id.toString(), // Convert to string for Weaviate
-      text: tweet.the_original_text,
-      author: tweet.author,
-      timestamp: tweet.timestamp.toISOString(), // Convert to ISO string for Weaviate
-      ai_reply: tweet.ai_replied_text,
-      is_ai_replied: tweet.ai_has_replied,
+      tweet_id: tweet.tweet_id.toString(),
+      user_name: tweet.user_name,
+      content: tweet.tweet_content,
+      tweet_link: tweet.tweet_link,
+      tweet_link_extra: tweet.tweet_link_extra || null,
+      is_replied_tweet: tweet.is_replied_tweet,
+      is_direct_tag: tweet.is_direct_tag,
+      created_at: tweet.created_at ? tweet.created_at.toISOString() : null,
+      updated_at: tweet.updated_at ? tweet.updated_at.toISOString() : null,
+      action_perform: tweet.action_perform || null,
     }).do();
-    console.log(`Inserted: ${tweet.the_original_text}`);
   }
+  console.log(`✅ Inserted ${tweets.length} tweets into Weaviate.`);
 
-  // Perform semantic search
-  const searchQuery = 'bullshit';
+  // 🔍 Semantic search
   const result = await client.graphql
     .get()
     .withClassName('Tweet')
     .withNearText({ concepts: [searchQuery] })
-    .withFields('tweet_id text author timestamp ai_reply is_ai_replied _additional { distance }')
-    .withLimit(3)
+    .withFields('tweet_id user_name content tweet_link created_at _additional { distance }')
+    .withLimit(5)
     .do();
 
-  console.log('\n🔍 Semantic search results for:', `"${searchQuery}"`);
-  result.data.Get.Tweet.forEach(tweet => {
-    console.log(`\n- "${tweet.text}" by ${tweet.author}`);
-    console.log(`  🆔 Tweet ID: ${tweet.tweet_id}`);
-    console.log(`  ⏰ Timestamp: ${tweet.timestamp}`);
-    if (tweet.ai_reply) console.log(`  💬 AI Reply: ${tweet.ai_reply}`);
-    console.log(`  🔎 Distance: ${tweet._additional.distance}`);
+  await pool.end(); // Close DB
+
+  // 📤 Format + extract from content
+  const enrichedResults = result.data.Get.Tweet.map(tweet => {
+    const extracted = extractSolanaData(tweet.content);
+    return { ...tweet, extracted };
   });
 
-  await pool.end(); // Close PostgreSQL connection
+  return enrichedResults;
 }
 
-main().catch(err => console.error('❌ Error:', err.message));
+module.exports = { syncTweetsAndSearch };
