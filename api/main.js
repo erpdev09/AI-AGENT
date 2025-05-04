@@ -144,11 +144,8 @@ app.get('/swaptoken/:from/:to/:amount', async (req, res) => {
 
 // === Semantic Search (Tweet Activity to perform action) Route ===
 app.get('/todoactivity', async (req, res) => {
-  const query = req.query.query;
-
-  if (!query) {
-    return res.status(400).json({ error: 'Missing query parameter' });
-  }
+  // Hardcoded query keywords
+  const query = 'swap,hello'; // ← set your default search terms here
 
   try {
     const results = await searchTweets(query);
@@ -169,12 +166,28 @@ app.get('/todoactivity', async (req, res) => {
       },
     }));
 
-    res.json({ results: formatted });
+    // Process and filter formatted tweets that have contracts
+    const extractedData = processExtractedData(formatted);
+
+    res.json({ results: extractedData });
   } catch (err) {
     console.error('Search error:', err);
     res.status(500).json({ error: 'Semantic search failed', details: err.message });
   }
 });
+
+// 🔍 Filtering logic
+function processExtractedData(data) {
+  return data
+    .map(item => ({
+      tweet_link_extra: item.tweet_link_extra,
+      contracts: item.extracted.contracts,
+      tokenAmounts: item.extracted.tokenAmounts,
+      keywords: item.extracted.keywords,
+      symbols: item.extracted.symbols,
+    }))
+    .filter(item => item.contracts && item.contracts.length > 0);
+}
 
 
 app.listen(PORT, () => {
