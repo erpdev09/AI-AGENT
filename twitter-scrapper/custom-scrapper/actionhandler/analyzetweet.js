@@ -1,26 +1,34 @@
+
 const { syncTweetsAndSearch } = require('../../../packages/ weaviate/pgvector');
 
-const query = 'swap'; // Change as needed
+/**
+ * Runs a semantic search on tweets using the provided query string.
+ * @param {string} query - Comma-separated keywords for search.
+ * @returns {Promise<Array>} - Array of tweet search results.
+ */
+async function searchTweets(query) {
+  try {
+    const results = await syncTweetsAndSearch(query);
 
-syncTweetsAndSearch(query)
-  .then(results => {
-    console.log('\n🔍 Semantic Search Results:\n');
-    results.forEach(tweet => {
-      console.log(`- "${tweet.content}" by ${tweet.user_name}`);
-      console.log(`  🆔 Tweet ID: ${tweet.tweet_id}`);
-      console.log(`  🔗 Link: ${tweet.tweet_link}`);
-      console.log(`  ⏰ Created: ${tweet.created_at}`);
-      console.log(`  📏 Distance: ${tweet._additional.distance}`);
+    return results.map(tweet => ({
+      content: tweet.content,
+      user_name: tweet.user_name,
+      tweet_id: tweet.tweet_id,
+      tweet_link: tweet.tweet_link,
+      tweet_link_extra: tweet.tweet_link_extra || null,
+      created_at: tweet.created_at,
+      distance: tweet._additional?.distance,
+      extracted: {
+        contracts: tweet.extracted.contracts || [],
+        tokenAmounts: tweet.extracted.tokenAmounts || [],
+        keywords: tweet.extracted.keywords || [],
+        symbols: tweet.extracted.symbols || [],
+      },
+    }));
+  } catch (error) {
+    console.error('Error during semantic tweet search:', error);
+    throw error;
+  }
+}
 
-      const { contracts, tokenAmounts, keywords, symbols } = tweet.extracted;
-      if (contracts.length) console.log(`  📜 Contracts: ${contracts.join(', ')}`);
-      if (tokenAmounts.length) console.log(`  💰 Token Amounts: ${tokenAmounts.join(', ')}`);
-      if (keywords.length) console.log(`  🧩 Keywords: ${keywords.join(', ')}`);
-      if (symbols.length) console.log(`  🪙 Symbols: ${symbols.join(', ')}`);
-
-      console.log('');
-    });
-  })
-  .catch(err => {
-    console.error('❌ Error during tweet sync and search:', err.message);
-  });
+module.exports = { searchTweets };

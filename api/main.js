@@ -3,7 +3,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const { swap } = require('../packages/wallet/swaptoken/swap');
-
+const { searchTweets } = require('../twitter-scrapper/custom-scrapper/actionhandler/analyzetweet');
 const { Connection, Keypair, Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 const bs58 = require('bs58');
 const spltokentransfer = require('../packages/wallet/transfertoken/soltoken'); // import the function
@@ -141,6 +141,41 @@ app.get('/swaptoken/:from/:to/:amount', async (req, res) => {
     res.status(500).json({ error: 'Swap failed', details: err.message });
   }
 });
+
+// === Semantic Search (Tweet Activity to perform action) Route ===
+app.get('/todoactivity', async (req, res) => {
+  const query = req.query.query;
+
+  if (!query) {
+    return res.status(400).json({ error: 'Missing query parameter' });
+  }
+
+  try {
+    const results = await searchTweets(query);
+
+    const formatted = results.map(tweet => ({
+      content: tweet.content,
+      user_name: tweet.user_name,
+      tweet_id: tweet.tweet_id,
+      tweet_link: tweet.tweet_link,
+      tweet_link_extra: tweet.tweet_link_extra || null,
+      created_at: tweet.created_at,
+      distance: tweet._additional?.distance,
+      extracted: {
+        contracts: tweet.extracted.contracts || [],
+        tokenAmounts: tweet.extracted.tokenAmounts || [],
+        keywords: tweet.extracted.keywords || [],
+        symbols: tweet.extracted.symbols || [],
+      },
+    }));
+
+    res.json({ results: formatted });
+  } catch (err) {
+    console.error('Search error:', err);
+    res.status(500).json({ error: 'Semantic search failed', details: err.message });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log(`🚀 API listening at http://localhost:${PORT}`);

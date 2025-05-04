@@ -114,7 +114,7 @@ async function insertTweet(tweet) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080 });
   
-  await page.goto('https://nitter.net/search?f=tweets&q=%28from%3Adylankoren%29+%28to%3Aelisabethxbt%29+&since=&until=&near=');
+  await page.goto('https://nitter.net/dylankoren/with_replies');
   await page.waitForSelector('.timeline-item');
   
   const timelineItems = await page.evaluate(() => {

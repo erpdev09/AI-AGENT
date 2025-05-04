@@ -113,6 +113,7 @@ async function syncTweetsAndSearch(searchQuery = 'solana') {
       action_perform: tweet.action_perform || null,
     }).do();
   }
+
   console.log(`✅ Inserted ${tweets.length} tweets into Weaviate.`);
 
   // 🔍 Semantic search
@@ -120,11 +121,11 @@ async function syncTweetsAndSearch(searchQuery = 'solana') {
     .get()
     .withClassName('Tweet')
     .withNearText({ concepts: [searchQuery] })
-    .withFields('tweet_id user_name content tweet_link created_at _additional { distance }')
+    .withFields('tweet_id user_name content tweet_link tweet_link_extra created_at _additional { distance }')
     .withLimit(5)
     .do();
 
-  await pool.end(); // Close DB
+  // ❌ Do NOT end the pool here, so it remains open for reuse
 
   // 📤 Format + extract from content
   const enrichedResults = result.data.Get.Tweet.map(tweet => {
@@ -135,4 +136,7 @@ async function syncTweetsAndSearch(searchQuery = 'solana') {
   return enrichedResults;
 }
 
-module.exports = { syncTweetsAndSearch };
+module.exports = {
+  syncTweetsAndSearch,
+  pool, // optionally export if you want to close it manually elsewhere
+};

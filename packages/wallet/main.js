@@ -96,7 +96,7 @@ const amount = 0.01;
   
 
   // Solana SPL Token transfer 
-  const privateKeyHex =  [223,248,172,222,170,24,124,35,139,166,25,46,194,129,38,62,37,34,104,15,132,137,26,68,27,120,149,0,198,62,68,228,255,11,222,110,41,90,149,67,31,20,185,40,166,244,176,233,63,65,94,86,186,103,55,126,97,219,124,142,229,133,176,44];
+  const privateKeyHex =  [223,243,142,229,133,176,44];
 const DESTINATION_WALLET = 'FDRd4BfnAsMhusifdsSrxrJyHtpLsoPUrDB1HzAzghix';
 const MINT_ADDRESS = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // You must change this value!
 const TRANSFER_AMOUNT = 1;

@@ -9,7 +9,11 @@ CREATE TABLE tweets (
     ai_replied_text TEXT,
     CONSTRAINT unique_tweet_text_author UNIQUE (the_original_text, author)
 );
+
+
 DROP TABLE
+
+
 CREATE TABLE
 my_new_database=> SELECT * FROM tweets;
  tweet_id | the_original_text | author | timestamp | ai_has_replied | ai_replied_text 
@@ -19,9 +23,9 @@ my_new_database=> SELECT * FROM tweets;
 my_new_database=> SELECT * FROM tweets;
       tweet_id       |                 the_original_text                  |   author    |         timestamp          | ai_has_replied |                                                                ai_replied_text                                                                
 ---------------------+----------------------------------------------------+-------------+----------------------------+----------------+-----------------------------------------------------------------------------------------------------------------------------------------------
- 1917477216256155833 | share your thoughts let's discuss!                 | Elisabeth   | 2025-04-30 17:51:53.601548 | f              | 
- 1917481047270609165 | what do you think about my crush calling me "bro"? | testaccount | 2025-04-30 17:51:53.61054  | t              | **depends.  is he secretly admiring your *bro-mance* potential, or just tragically uninspired?  either way, get creative with your revenge.**
-(2 rows)
+
+
+
 
 
 
@@ -36,4 +40,17 @@ CREATE TABLE remindme (
 );
 
 
+// Table Schema for Tweet scraping for action
+CREATE TABLE tweetdata (
+    tweet_id SERIAL PRIMARY KEY,
+    user_name VARCHAR(255) NOT NULL,
+    tweet_content TEXT NOT NULL,
+    tweet_link VARCHAR(255) NOT NULL,
+    tweet_link_extra TEXT,
+    is_replied_tweet BOOLEAN DEFAULT FALSE,
+    is_direct_tag BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    action_perform BOOLEAN DEFAULT FALSE
+);
 
