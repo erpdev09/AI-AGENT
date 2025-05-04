@@ -110,8 +110,9 @@ async function syncTweetsAndSearch(searchQuery = 'solana') {
       is_direct_tag: tweet.is_direct_tag,
       created_at: tweet.created_at ? tweet.created_at.toISOString() : null,
       updated_at: tweet.updated_at ? tweet.updated_at.toISOString() : null,
-      action_perform: tweet.action_perform || null,
+      action_perform: tweet.action_perform != null ? String(tweet.action_perform) : null,
     }).do();
+    
   }
 
   console.log(`✅ Inserted ${tweets.length} tweets into Weaviate.`);
