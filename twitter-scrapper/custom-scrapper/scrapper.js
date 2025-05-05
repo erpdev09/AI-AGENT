@@ -2,6 +2,7 @@ const puppeteer = require('puppeteer');
 const pool = require('../../config/dbconnect');
 
 
+
 async function checkAndUpdateConstraints() {
   const client = await pool.connect();
   try {
