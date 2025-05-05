@@ -7,6 +7,10 @@ const client = new TwitterApi({
   accessSecret: '',
 });
 
+/**
+ * Posts a tweet with the given text.
+ * @param {string} tweetText - The content of the tweet to post.
+ */
 async function postTweet(tweetText) {
   try {
     const tweet = await client.v2.tweet(tweetText);
@@ -16,4 +20,6 @@ async function postTweet(tweetText) {
   }
 }
 
-postTweet('Hello world! This is my first tweet with the Twitter API v2.');
+module.exports = {
+  postTweet,
+};

@@ -114,6 +114,10 @@ async function insertTweet(tweet) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080 });
   
+  /*  Here the is a go-to function where you can pass the query
+  This make sure it scrapes the latest from the user @ supposedly the
+  @owner account so that the bot can interact/perform actions
+  */
   await page.goto('https://nitter.net/dylankoren/with_replies');
   await page.waitForSelector('.timeline-item');
   

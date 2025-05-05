@@ -1,3 +1,10 @@
+/* 
+Use only if you need to deploy AI-Agent for general purpose context aware
+This allow your Bot @to replies to latest tweets and DMs replies
+
+Enable this code feature on the twitter-scrapper/main.js
+Uncomment the function to enable the features
+*/
 require('dotenv').config(); // Ensure env vars are loaded
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const pool = require("../config/dbconnect");

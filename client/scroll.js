@@ -1,6 +1,9 @@
 
 
-/*  This handle the scrolling on the feeds and liking the post randomly */
+/*  This handle the scrolling on the feeds and liking the post randomly 
+Enable this code feature on the twitter-scrapper/main.js
+Uncomment the function to enable the features
+*/
 async function scrollTwitterFeed(page) {
     try {
       console.log("🕒 Waiting for home timeline to load...");

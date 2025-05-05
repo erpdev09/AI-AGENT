@@ -1,4 +1,11 @@
-/* Handles the reply to dm and unread dms~ */
+/* 
+Use only if you need to deploy AI-Agent for general purpose context aware
+This allow your Bot @to replies to latest tweets and DMs replies,
+Handles the reply to dm and unread dms
+
+Enable this code feature on the twitter-scrapper/main.js
+Uncomment the function to enable the features
+*/
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 
