@@ -1,8 +1,9 @@
 const needle = require('needle');
 const fs = require('fs');
+const pool = require('../../../config/dbconnect'); 
 
 const endpointUrl = "https://api.twitter.com/2/tweets/search/recent";
-const bearerToken = ''; // replace with env var in production
+const bearerToken = '';
 
 async function searchMentions() {
     const params = {
@@ -20,7 +21,7 @@ async function searchMentions() {
 
     try {
         const response = await needle("get", endpointUrl, params, options);
-        
+
         if (response.statusCode !== 200) {
             console.error(`Error: ${response.statusCode} ${response.statusMessage}`);
             console.error(response.body);
@@ -29,10 +30,9 @@ async function searchMentions() {
 
         const tweets = response.body.data || [];
 
-        // Enrich the tweet data
         const formattedTweets = tweets.map(tweet => {
             const hasMention = tweet.text.includes('@');
-            const username = 'rilso_y'; // since query is (from:rilso_y), hardcoded here
+            const username = 'rilso_y';
             const tweetLink = `https://x.com/${username}/status/${tweet.id}`;
 
             return {
@@ -42,7 +42,7 @@ async function searchMentions() {
                 tweet_link: tweetLink,
                 tweet_link_extra: tweetLink,
                 is_replied_tweet: hasMention,
-                is_direct_tag: false, // logic could be updated if needed
+                is_direct_tag: false,
                 created_at: new Date(tweet.created_at).toISOString(),
                 updated_at: new Date().toISOString(),
                 action_perform: false
@@ -55,7 +55,44 @@ async function searchMentions() {
         fs.writeFileSync('twitter_mentions.json', JSON.stringify(formattedTweets, null, 2));
         console.log("Response saved to twitter_mentions.json");
 
-        // Rate limit info
+        for (const tweet of formattedTweets) {
+            const { tweet_id } = tweet;
+
+            const existsQuery = 'SELECT 1 FROM tweets1 WHERE tweet_id = $1';
+            const existsResult = await pool.query(existsQuery, [tweet_id]);
+
+            if (existsResult.rows.length > 0) {
+                console.log(`⏩ Skipping duplicate tweet_id ${tweet_id}`);
+                continue;
+            }
+
+            const insertQuery = `
+                INSERT INTO tweets1 (
+                    tweet_id, user_name, tweet_content, tweet_link, tweet_link_extra,
+                    is_replied_tweet, is_direct_tag, created_at, updated_at, action_perform
+                ) VALUES (
+                    $1, $2, $3, $4, $5,
+                    $6, $7, $8, $9, $10
+                )
+            `;
+
+            const values = [
+                tweet_id,
+                tweet.user_name,
+                tweet.tweet_content,
+                tweet.tweet_link,
+                tweet.tweet_link_extra,
+                tweet.is_replied_tweet,
+                tweet.is_direct_tag,
+                tweet.created_at,
+                tweet.updated_at,
+                tweet.action_perform
+            ];
+
+            await pool.query(insertQuery, values);
+            console.log(`✅ Inserted tweet_id ${tweet_id}`);
+        }
+
         const headers = response.headers;
         console.log("\nRate Limit Info:");
         console.log(`Limit: ${headers['x-rate-limit-limit']}`);

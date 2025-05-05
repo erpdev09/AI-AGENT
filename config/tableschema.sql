@@ -41,8 +41,8 @@ CREATE TABLE remindme (
 
 
 // Table Schema for Tweet scraping for action
-CREATE TABLE tweetdata (
-    tweet_id SERIAL PRIMARY KEY,
+CREATE TABLE tweets1 (
+    tweet_id TEXT PRIMARY KEY,
     user_name VARCHAR(255) NOT NULL,
     tweet_content TEXT NOT NULL,
     tweet_link VARCHAR(255) NOT NULL,
@@ -53,4 +53,3 @@ CREATE TABLE tweetdata (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     action_perform BOOLEAN DEFAULT FALSE
 );
-
