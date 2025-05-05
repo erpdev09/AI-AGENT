@@ -3,10 +3,10 @@ const chrono = require('chrono-node');
 
 const input = "Create a giveaway for 2 guys for 0.002 SOL that ends in 4min";
 
-// Check intent
+
 const isCreateGiveaway = /create a (giveaway|gw)( campaign)?/i.test(input);
 
-// Extract number of participants
+
 let doc = nlp(input);
 let number = doc.numbers().values().map(n => n.number)[0];
 

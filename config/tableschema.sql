@@ -58,19 +58,28 @@ CREATE TABLE tweets1 (
 // Table Schema for Giveaways
 
 -- Giveaway Table: Stores campaign-level data
-CREATE TABLE giveaway (
-    id SERIAL PRIMARY KEY,                          -- Auto-incrementing unique ID
-    main_tweet_id VARCHAR(50) NOT NULL,             -- The tweet ID that initiated the giveaway
-    prize_pool NUMERIC(18, 6) NOT NULL,             -- Prize pool (e.g., tokens, cryptocurrency amount)
-    timeline TIMESTAMP NOT NULL,                    -- Deadline or end time of the giveaway
-    CONSTRAINT unique_main_tweet_id UNIQUE (main_tweet_id)  -- Ensure no duplicates by main_tweet_id
+CREATE TABLE giveaways (
+  giveaway_id SERIAL PRIMARY KEY,  -- Unique ID for each giveaway
+  is_create_giveaway BOOLEAN NOT NULL,  -- Whether this is a giveaway tweet
+  participant_count INT,  -- Number of participants (optional)
+  amount DECIMAL(18, 8),  -- Amount for the giveaway (e.g., SOL, USDC)
+  token_type TEXT,  -- Type of token (e.g., SOL, USDC)
+  deadline TIMESTAMP,  -- Deadline for the giveaway
+  tweet_id BIGINT NOT NULL,  -- Tweet ID of the giveaway tweet
+  user_name VARCHAR(255) NOT NULL,  -- Username of the giveaway creator
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When the giveaway was created
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When the giveaway details were last updated
+  action_performed BOOLEAN DEFAULT FALSE,  -- Flag to indicate if the action has been performed (e.g., giveaway completion)
+  CONSTRAINT unique_giveaway UNIQUE (tweet_id)  -- Ensure each giveaway tweet is unique
 );
 
--- Participants Table: Stores user entries for the giveaway
+
+-- Participants
 CREATE TABLE participants (
-    id SERIAL PRIMARY KEY,                          -- Unique participant ID
-    giveaway_id INTEGER NOT NULL REFERENCES giveaway(id) ON DELETE CASCADE, -- Foreign key to giveaway
-    username VARCHAR(50) NOT NULL,                  -- Username of the participant
-    tweet_id VARCHAR(50) NOT NULL,                  -- Tweet ID of the participant's reply
-    action_perform BOOLEAN DEFAULT FALSE NOT NULL   -- Whether they followed the rules
+  participant_id SERIAL PRIMARY KEY,  -- Unique ID for the participant entry
+  giveaway_id INT NOT NULL,  -- Foreign key to the giveaways table
+  tweet_id BIGINT NOT NULL,  -- Tweet ID of the reply
+  user_name VARCHAR(255) NOT NULL,  -- Username of the participant
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When the participant entered
+  FOREIGN KEY (giveaway_id) REFERENCES giveaways (giveaway_id) ON DELETE CASCADE
 );
