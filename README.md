@@ -34,7 +34,7 @@ Browser and Twitter APIs
 
 3. **Environment Setup**:
    - Create a `.env` file in the root directory with required API keys and configuration
-   - Set up Google Cloud, OpenAI, Twitter API, and blockchain credentials
+   - Set up Google Cloud, Twitter API, and blockchain credentials
 
 4. **Database Setup**:
    - Configure PostgreSQL credentials in `config/` directory
@@ -91,7 +91,7 @@ AI-AGENT/
 ## Key Features
 
 - **Automated Tweet Discovery**: Uses Puppeteer to search and scrape tweets based on custom queries
-- **Multi-AI Integration**: Leverages OpenAI, Google's Generative AI, and LlamaAI for content generation
+- **AI Integration**: Leverages Google's Generative AI for content generation
 - **Text-to-Speech**: Converts text to audio using Google's TTS API
 - **OCR Capabilities**: Extracts text from images using Tesseract.js
 - **Direct Message Management**: Automatically responds to DMs using AI
@@ -106,8 +106,7 @@ AI-AGENT/
 ## Configuration
 
 - **API Keys**:
-  - OpenAI API key in `clientreply.js` (`a84bd072398746d7aabde062456652c6`)
-  - Google Cloud API credentials for Text-to-Speech and Generative AI
+  - Replace Gemini API key in `clientreply.js` 
   - Twitter API credentials for direct API access
   - Blockchain wallet credentials for Solana and Ethereum
 
@@ -144,42 +143,9 @@ AI-AGENT/
   scrapeTweets(page, "your search query")
   ```
 
-## Technology Stack
 
-- **AI & Machine Learning**:
-  - Google Generative AI for content creation
-  - Tesseract.js for Optical Character Recognition (OCR)
 
-- **Web Automation & Scraping**:
-  - Puppeteer for browser automation
-  - Puppeteer-extra with stealth plugin for detection avoidance
-  - Cheerio for HTML parsing
-
-- **Media Processing**:
-  - Google Text-to-Speech for voice generation
-  - Canvas for image manipulation
-  - Sharp for image processing
-  - FFmpeg for video processing
-
-- **Blockchain Integration**:
-  - Solana SDK for SPL token interactions
-  - Ethereum integration via Web3.js and ethers.js
-  - BIP39 for cryptocurrency wallet management
-
-- **Data Management**:
-  - PostgreSQL for relational database storage
-  - Data processing pipelines
-
-- **APIs & Communication**:
-  - Twitter API v2 for direct platform interaction
-  - Express for API endpoints
-  - Axios and Got for HTTP requests
-
-- **Utilities**:
-  - dayjs for date handling
-  - dotenv for environment variable management
-
-## Usage
+## Usage (HOW TO DOCS) will be update in due time
 
 1. Configure your search parameters in the appropriate configuration files
 2. Ensure database connection is properly set up
