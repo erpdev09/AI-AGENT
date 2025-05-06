@@ -8,9 +8,10 @@ const extractSolanaAddresses = (text) => {
   const matches = text.match(solanaAddressRegex);
   return matches || [];
 };
+// if criteria are not met then it wont return anything
 
-const tweetId = '1919455799174148575';
-const apiKey = '8c692c9487c54f9f814ae5823b7a0eba';
+const tweetId = '1919716799995904493';
+const apiKey = '';
 
 getTweetReplies(tweetId, apiKey)
   .then(data => {
