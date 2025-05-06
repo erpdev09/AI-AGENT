@@ -6,7 +6,7 @@ async function drawAllGiveaways() {
   try {
     // Step 1: Retrieve all giveaways that are not marked as completed
     const giveawayQuery = `
-      SELECT giveaway_id, participant_count
+      SELECT giveaway_id, participant_count, amount, token_type
       FROM public.giveaway
       WHERE action_performed = FALSE; -- Only fetch giveaways that are not completed
     `;
@@ -21,6 +21,13 @@ async function drawAllGiveaways() {
     for (const giveaway of giveawayResult.rows) {
       const giveawayId = giveaway.giveaway_id;
       const participantCount = giveaway.participant_count;
+      const prizePool = giveaway.amount; // The total prize pool for this giveaway
+      const tokenType = giveaway.token_type; // Retrieve token type from the giveaway table
+
+      if (participantCount === 0) {
+        console.log(`No participants count for Giveaway ID ${giveawayId}. Skipping.`);
+        continue;
+      }
 
       // Step 2: Retrieve all participants for this giveaway
       const participantsQuery = `
@@ -43,6 +50,9 @@ async function drawAllGiveaways() {
       const participants = participantsResult.rows;
       const winners = [];
 
+      // Calculate the prize per winner
+      const prizePerWinner = prizePool / participantCount;
+
       // Randomly select winners based on participant count
       for (let i = 0; i < participantCount; i++) {
         const winnerIndex = Math.floor(Math.random() * participants.length); // Random index
@@ -54,6 +64,7 @@ async function drawAllGiveaways() {
         console.log(`Winner for Giveaway ID ${giveawayId}:`);
         console.log(`  Username: ${winner.username}`);  // Correctly accessing the 'username' field
         console.log(`  Solana Address: ${winner.solana_address}`);
+        console.log(`  Prize Amount: ${prizePerWinner} ${tokenType}`); // Log the prize for each winner, using tokenType from the giveaway table
         console.log(`  Tweet URL: ${winner.tweet_url}`);
         console.log('--------------------------');
       }
