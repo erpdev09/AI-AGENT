@@ -58,28 +58,26 @@ CREATE TABLE tweets1 (
 // Table Schema for Giveaways
 
 -- Giveaway Table: Stores campaign-level data
-CREATE TABLE giveaways (
-  giveaway_id SERIAL PRIMARY KEY,  -- Unique ID for each giveaway
-  is_create_giveaway BOOLEAN NOT NULL,  -- Whether this is a giveaway tweet
-  participant_count INT,  -- Number of participants (optional)
-  amount DECIMAL(18, 8),  -- Amount for the giveaway (e.g., SOL, USDC)
-  token_type TEXT,  -- Type of token (e.g., SOL, USDC)
-  deadline TIMESTAMP,  -- Deadline for the giveaway
-  tweet_id BIGINT NOT NULL,  -- Tweet ID of the giveaway tweet
-  user_name VARCHAR(255) NOT NULL,  -- Username of the giveaway creator
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When the giveaway was created
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When the giveaway details were last updated
-  action_performed BOOLEAN DEFAULT FALSE,  -- Flag to indicate if the action has been performed (e.g., giveaway completion)
-  CONSTRAINT unique_giveaway UNIQUE (tweet_id)  -- Ensure each giveaway tweet is unique
+CREATE TABLE giveaway (
+  giveaway_id BIGINT PRIMARY KEY,  -- Manually set to tweet_id
+  is_create_giveaway BOOLEAN NOT NULL,
+  participant_count INT,
+  amount DECIMAL(18, 8),
+  token_type TEXT,
+  deadline TIMESTAMP,
+  tweet_id BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  action_performed BOOLEAN DEFAULT FALSE,
+  CONSTRAINT unique_giveaway UNIQUE (tweet_id)
 );
 
-
--- Participants
 CREATE TABLE participants (
-  participant_id SERIAL PRIMARY KEY,  -- Unique ID for the participant entry
-  giveaway_id INT NOT NULL,  -- Foreign key to the giveaways table
-  tweet_id BIGINT NOT NULL,  -- Tweet ID of the reply
-  user_name VARCHAR(255) NOT NULL,  -- Username of the participant
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- When the participant entered
-  FOREIGN KEY (giveaway_id) REFERENCES giveaways (giveaway_id) ON DELETE CASCADE
+  participant_id SERIAL PRIMARY KEY,
+  giveaway_id BIGINT REFERENCES giveaway(giveaway_id) ON DELETE CASCADE,
+  username VARCHAR(255) NOT NULL,
+  solana_address VARCHAR(50) NOT NULL,
+  tweet_url TEXT,
+  submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT unique_participant_per_giveaway UNIQUE (giveaway_id, username)
 );
