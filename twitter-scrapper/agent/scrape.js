@@ -1,5 +1,5 @@
-const { analyzeTweets } = require('../client/clientreply');
-const pool = require('../config/dbconnect');
+const { analyzeTweets } = require('../../client/clientreply');
+const pool = require('../../config/dbconnect');
 
 const AI_ACCOUNT_NAME = 'Elisabeth'; 
 

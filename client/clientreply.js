@@ -11,7 +11,7 @@ const pool = require("../config/dbconnect");
 const fs = require("fs");
 
 // Load character persona
-const character = JSON.parse(fs.readFileSync('../pipeline/sentiment/character.json', 'utf8'));
+const character = JSON.parse(fs.readFileSync('../../pipeline/sentiment/character.json', 'utf8'));
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI('');
