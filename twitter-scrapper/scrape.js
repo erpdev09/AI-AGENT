@@ -1,8 +1,7 @@
 const { analyzeTweets } = require('../client/clientreply');
 const pool = require('../config/dbconnect');
 
-// Define the AI's Twitter/X account name
-const AI_ACCOUNT_NAME = 'Elisabeth'; // Replace with the actual AI account name if different
+const AI_ACCOUNT_NAME = 'Elisabeth'; 
 
 async function scrapeTweets(page, searchQuery) {
   console.log("Opening search bar...");
