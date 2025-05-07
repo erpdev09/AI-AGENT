@@ -283,11 +283,19 @@ async function downloadVideo(videoUrl, tweetId) {
       console.log('🔄 This is a reply without Solana address, fetching parent tweet context...');
       const parentTweetContent = await getParentTweetContent(page, item.tweetLinkExtra);
       if (parentTweetContent) {
-        console.log('➕ Appending parent tweet content to tweet content');
-        finalTweetContent = `[PARENT TWEET: ${parentTweetContent}] ${finalTweetContent}`;
+        console.log('➕ Extracting Solana wallet from parent tweet content');
+        // Regular expression to match Solana wallet addresses (44 chars, base58)
+        const solanaAddressMatch = parentTweetContent.match(/[1-9A-HJ-NP-Za-km-z]{44}/);
+        const solanaAddress = solanaAddressMatch ? solanaAddressMatch[0] : '';
+        if (solanaAddress) {
+          console.log('➕ Appending Solana wallet to tweet content');
+          finalTweetContent = `${finalTweetContent} ${solanaAddress}`;
+        } else {
+          console.log('⚠️ No Solana wallet found in parent tweet content');
+          finalTweetContent = `[PARENT TWEET: ${parentTweetContent}] ${finalTweetContent}`;
+        }
       }
     }
-    
     const tweetData = {
       tweetId: item.tweetId,
       userName: item.userName,
