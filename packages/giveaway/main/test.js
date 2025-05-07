@@ -1,3 +1,12 @@
+
+/*
+
+
+Example to test tje extraction of keywords and determining a proper context from text/tweets
+for extracting correct keywords and timeline
+*/
+
+
 const nlp = require('compromise');
 const chrono = require('chrono-node');
 

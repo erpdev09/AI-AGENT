@@ -1,3 +1,6 @@
+/* 
+Example for docs */
+
 const { postTweetWithImage } = require('../managetweet/mediatweet'); // adjust path as needed
 
 (async () => {

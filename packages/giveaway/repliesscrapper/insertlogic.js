@@ -7,7 +7,7 @@ const extractSolanaAddresses = (text) => {
   return matches || [];
 };
 
-const tweetId = '1919455799174148575';
+const tweetId = '';
 const giveawayId = tweetId; // Same as giveaway_id
 const apiKey = '';
 

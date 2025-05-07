@@ -3,8 +3,8 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
-const login = require('./login');
-const scrapeTweets = require('./scrape');
+const login = require('../../../twitter-scrapper/agent/login');
+const scrapeTweets = require('../../../twitter-scrapper/agent/scrape');
 
 
 (async () => {

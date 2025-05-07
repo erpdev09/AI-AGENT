@@ -8,6 +8,12 @@ const { videoDownloader } = require('../../packages/twitterapi.io/main/scrapevid
 
 const API_KEY = '';
 
+// Function to detect Solana addresses in text
+function containsSolanaAddress(text) {
+  // Solana addresses are base58-encoded and 32-44 characters long, usually starting with a number or letter
+  const solanaAddressRegex = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
+  return solanaAddressRegex.test(text);
+}
 async function checkAndUpdateConstraints() {
   const client = await pool.connect();
   try {
@@ -100,6 +106,51 @@ function extractTweetIdFromUrl(url) {
     return parts[1].split(/[#?]/)[0]; // Remove hash or query
   }
   return null;
+}
+
+// Function to convert nitter.net URLs to x.com URLs
+function convertToXDotCom(url) {
+  if (url && url.includes('nitter.net')) {
+    return url.replace('nitter.net', 'x.com');
+  }
+  return url;
+}
+
+/**
+ * Gets the parent tweet content for a reply tweet
+ * @param {Page} page - Puppeteer page object
+ * @param {string} tweetUrl - URL of the reply tweet
+ * @returns {Promise<string|null>} - Content of the parent tweet or null if not found
+ */
+async function getParentTweetContent(page, tweetUrl) {
+  try {
+    console.log(`🔍 Fetching parent tweet content for: ${tweetUrl}`);
+    
+    await page.goto(tweetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    
+    // Wait for the tweet thread to load
+    await page.waitForSelector('.main-thread', { timeout: 10000 });
+    
+    // Get the parent tweet content (first tweet in the thread)
+    const parentTweetContent = await page.evaluate(() => {
+      const parentTweetElement = document.querySelector('.main-thread .timeline-item:first-child .tweet-content');
+      if (parentTweetElement) {
+        return parentTweetElement.innerText.trim();
+      }
+      return null;
+    });
+    
+    if (parentTweetContent) {
+      console.log(`✅ Found parent tweet content: "${parentTweetContent.substring(0, 50)}${parentTweetContent.length > 50 ? '...' : ''}"`);
+      return parentTweetContent;
+    } else {
+      console.log('⚠️ Parent tweet content not found');
+      return null;
+    }
+  } catch (error) {
+    console.error(`❌ Error fetching parent tweet content: ${error.message}`);
+    return null;
+  }
 }
 
 /**
@@ -222,17 +273,33 @@ async function downloadVideo(videoUrl, tweetId) {
     const isRepliedTweet = item.tweetContent.includes('@');
     const isDirectTag = !isRepliedTweet;
 
+    // Convert nitter.net URLs to x.com
+    const convertedTweetLinkExtra = convertToXDotCom(item.tweetLinkExtra);
+    
+    let finalTweetContent = item.tweetContent;
+    
+    // Check if this is a reply tweet and doesn't contain a Solana address
+    if (isRepliedTweet && !containsSolanaAddress(item.tweetContent)) {
+      console.log('🔄 This is a reply without Solana address, fetching parent tweet context...');
+      const parentTweetContent = await getParentTweetContent(page, item.tweetLinkExtra);
+      if (parentTweetContent) {
+        console.log('➕ Appending parent tweet content to tweet content');
+        finalTweetContent = `[PARENT TWEET: ${parentTweetContent}] ${finalTweetContent}`;
+      }
+    }
+    
     const tweetData = {
       tweetId: item.tweetId,
       userName: item.userName,
-      tweetContent: item.tweetContent,
-      tweetLink: item.tweetLink,
-      tweetLinkExtra: item.tweetLinkExtra,
+      tweetContent: finalTweetContent,
+      tweetLink: convertedTweetLinkExtra, // Both links are the same, using convertedTweetLinkExtra
+      tweetLinkExtra: convertedTweetLinkExtra,
       isRepliedTweet,
-      isDirectTag,
+      isDirectTag
     };
 
     console.log('➡️ Processing tweet:', tweetData.tweetId);
+    
     await insertTweet(tweetData);
 
     const hasKeyword = keywords.some(keyword =>
@@ -245,6 +312,7 @@ async function downloadVideo(videoUrl, tweetId) {
       console.log('🔍 Found keyword in tweet, checking for images...');
 
       try {
+        // Use the original nitter.net URL for web scraping (not the converted x.com URL)
         await page.goto(item.tweetLinkExtra);
         await page.waitForSelector('.timeline-item', { timeout: 10000 });
 
@@ -287,6 +355,7 @@ async function downloadVideo(videoUrl, tweetId) {
       console.log(`🎥 Found video/clip-related tweet: ${item.tweetLinkExtra}`);
 
       try {
+        // Use the original nitter.net URL for web scraping (not the converted x.com URL)
         await page.goto(item.tweetLinkExtra, { waitUntil: 'networkidle2' });
 
         const currentUrl = page.url();
@@ -296,6 +365,11 @@ async function downloadVideo(videoUrl, tweetId) {
           console.log(`🆔 Extracted tweet ID: ${extractedTweetId}`);
 
           tweetData.tweetId = extractedTweetId;
+          
+          // Make sure the links are converted to x.com for this updated tweet data
+          tweetData.tweetLink = convertToXDotCom(tweetData.tweetLink);
+          tweetData.tweetLinkExtra = convertToXDotCom(tweetData.tweetLinkExtra);
+          
           await insertTweet(tweetData);
           
           // Get tweet ID for video download

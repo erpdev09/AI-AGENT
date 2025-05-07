@@ -10,7 +10,7 @@ const extractSolanaAddresses = (text) => {
 };
 // if criteria are not met then it wont return anything
 
-const tweetId = '1919716799995904493';
+const tweetId = '';
 const apiKey = '';
 
 getTweetReplies(tweetId, apiKey)

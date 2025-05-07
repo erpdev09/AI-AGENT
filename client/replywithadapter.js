@@ -6,3 +6,28 @@ This requires user to Input their credentials like
 There root source folder for the adapter is here 
 packages/twitter-api-adapter
 */
+const { postTweet } = require('../packages/twitter-api-adapter/managetweet/createtweet');
+
+postTweet('Hello world! This is my first tweet with the Twitter API v2.');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// This is a feature to tweet for images
+
+// const { postTweetWithImage } = require('../managetweet/mediatweet'); // adjust path as needed
+
+// (async () => {
+//   await postTweetWithImage('Hello world! Here’s a picture with my tweet! via twitter api', './media/tweet_image.png');
+// })();

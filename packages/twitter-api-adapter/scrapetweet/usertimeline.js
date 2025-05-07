@@ -8,6 +8,8 @@ const bearerToken = '';
 async function searchMentions() {
     const params = {
         "query": "(from:rilso_y) (@Elisabethxbt)",
+        /* here we make sure it's update from higher level to update and then insert the data from
+        frontend*/
         "max_results": 10,
         "tweet.fields": "created_at,author_id,text"
     };
