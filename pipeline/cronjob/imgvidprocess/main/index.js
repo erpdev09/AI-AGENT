@@ -116,10 +116,9 @@ function appendToTxtFile(filePath, address, txtFileMap) {
       const lines = existingContent.split('\n');
       
       // Check if address already exists in the file
-      if (!lines.some(line => line.includes(address))) {
-        // Append the address with timestamp
-        const timestamp = new Date().toISOString();
-        fs.appendFileSync(txtFileMap[baseName], `\n${address} [detected: ${timestamp}]`);
+      if (!lines.some(line => line.trim() === address.trim())) {
+        // Append the address without timestamp
+        fs.appendFileSync(txtFileMap[baseName], `\n${address}`);
         console.log(`📝 Appended address to existing file: ${txtFileMap[baseName]}`);
       } else {
         console.log(`⚠️ Address already exists in ${txtFileMap[baseName]}, skipping`);
@@ -128,8 +127,7 @@ function appendToTxtFile(filePath, address, txtFileMap) {
     } else {
       // Create a new txt file in the same directory as the media file
       const newTxtFile = path.join(path.dirname(filePath), `${baseName}.txt`);
-      const timestamp = new Date().toISOString();
-      fs.writeFileSync(newTxtFile, `${address} [detected: ${timestamp}]`);
+      fs.writeFileSync(newTxtFile, `${address}`);
       console.log(`📝 Created new txt file: ${newTxtFile}`);
       return true;
     }
@@ -169,12 +167,23 @@ async function processFile(filePath, txtFileMap, tempDir = 'frames') {
     // Process the file
     const result = await ocr.processFile(filePath);
     
+    // Clean up the frame directory for this specific file
+    cleanupDirectory(frameDir);
+    
     // Handle the result
     if (result.success) {
       console.log(`✅ Detected Solana address: ${result.address}`);
       
       // Append to txt file
       const appendResult = appendToTxtFile(filePath, result.address, txtFileMap);
+      
+      // Clean up the temporary output file if it exists
+      const tempOutputFile = path.join(tempDir, `${path.basename(filePath, path.extname(filePath))}_address.txt`);
+      if (fs.existsSync(tempOutputFile)) {
+        fs.unlinkSync(tempOutputFile);
+        console.log(`🧹 Deleted temporary output file: ${tempOutputFile}`);
+      }
+      
       if (appendResult) {
         return true;
       } else {
@@ -188,6 +197,26 @@ async function processFile(filePath, txtFileMap, tempDir = 'frames') {
     }
   } catch (error) {
     console.error(`❌ Error processing file ${filePath}:`, error.message);
+    return false;
+  }
+}
+
+/**
+ * Clean up a directory by removing all files and subdirectories
+ * @param {string} directory - Directory to clean up
+ * @returns {boolean} Success or failure
+ */
+function cleanupDirectory(directory) {
+  try {
+    if (fs.existsSync(directory)) {
+      console.log(`🧹 Cleaning up directory: ${directory}`);
+      fs.rmSync(directory, { recursive: true, force: true });
+      console.log(`✅ Removed directory: ${directory}`);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error(`❌ Error cleaning up directory ${directory}:`, error.message);
     return false;
   }
 }
@@ -256,6 +285,9 @@ async function processDirectories(directories) {
       // Optional: Add delay between processing files to avoid overloading the system
       // await new Promise(resolve => setTimeout(resolve, 500));
     }
+    
+    // Clean up the temporary directory for this specific source directory
+    cleanupDirectory(tempDir);
   }
   
   // Print summary
@@ -264,8 +296,10 @@ async function processDirectories(directories) {
   console.log(`   Successfully processed: ${totalSuccess}`);
   console.log(`   Failed: ${totalProcessed - totalSuccess}`);
   
-  // Optional: Clean up temporary directories
-  // fs.rmSync(tempRootDir, { recursive: true, force: true });
+  // Clean up temporary root directory
+  console.log(`\n🧹 Cleaning up all temporary files...`);
+  cleanupDirectory(tempRootDir);
+  console.log(`✅ All temporary files have been removed`);
 }
 
 /**
@@ -280,8 +314,15 @@ async function main() {
       // Process a single file
       console.log(`🔍 Processing single file: ${inputPath}`);
       
+      const tempDir = path.join(process.cwd(), 'frames');
+      
+      // Create frames directory if it doesn't exist
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      
       const ocr = new SolanaOCR({
-        frameDir: 'frames',
+        frameDir: tempDir,
         frameRate: 1,
         outputFile: 'detected_address.txt'
       });
@@ -291,9 +332,25 @@ async function main() {
       if (result.success) {
         console.log(`\n🚀 Successfully detected Solana address: ${result.address}`);
         console.log(`📄 Address saved to: ${result.file}`);
+        
+        // Clean up temporary files after successful processing
+        console.log(`\n🧹 Cleaning up temporary files...`);
+        cleanupDirectory(tempDir);
+        
+        // Remove the output file if needed
+        if (fs.existsSync('detected_address.txt')) {
+          fs.unlinkSync('detected_address.txt');
+          console.log(`✅ Removed temporary output file: detected_address.txt`);
+        }
+        
         process.exit(0);
       } else {
         console.error(`\n❌ Failed to detect Solana address: ${result.error}`);
+        
+        // Clean up temporary files even after failure
+        console.log(`\n🧹 Cleaning up temporary files...`);
+        cleanupDirectory(tempDir);
+        
         process.exit(1);
       }
     } else {
@@ -311,6 +368,15 @@ async function main() {
     }
   } catch (error) {
     console.error('\n❌ Unexpected error:', error.message || error);
+    
+    // Clean up any potentially left-over temporary files on error
+    console.log(`\n🧹 Attempting to clean up temporary files after error...`);
+    const tempRootDir = path.join(process.cwd(), 'temp_frames');
+    cleanupDirectory(tempRootDir);
+    
+    const framesDir = path.join(process.cwd(), 'frames');
+    cleanupDirectory(framesDir);
+    
     process.exit(1);
   }
 }
