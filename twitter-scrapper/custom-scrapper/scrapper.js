@@ -195,18 +195,32 @@ async function getParentTweetContent(page, tweetUrl) {
  * Downloads a video file from the given URL and saves it to disk
  * @param {string} videoUrl - The URL of the video to download
  * @param {string} tweetId - The tweet ID to use in the filename
+ * @param {string} tweetContent - The content of the tweet to save alongside the video
  * @returns {Promise<string|null>} - The path to the saved file or null if failed
  */
-async function downloadVideo(videoUrl, tweetId) {
+async function downloadVideo(videoUrl, tweetId, tweetContent) {
   try {
     console.log(`🔢 Downloading video from: ${videoUrl}`);
     
+    // Create main videos directory if it doesn't exist
     const videosDir = path.join(__dirname, 'tweet_videos');
     if (!fs.existsSync(videosDir)) {
       fs.mkdirSync(videosDir);
     }
     
-    const videoPath = path.join(videosDir, `${tweetId}.mp4`);
+    // Create a directory for this specific tweet
+    const tweetDir = path.join(videosDir, tweetId);
+    if (!fs.existsSync(tweetDir)) {
+      fs.mkdirSync(tweetDir);
+    }
+    
+    // Save the tweet content to a text file in the tweet directory
+    const tweetContentPath = path.join(tweetDir, `${tweetId}.txt`);
+    fs.writeFileSync(tweetContentPath, tweetContent);
+    console.log(`📝 Saved tweet content: ${tweetContentPath}`);
+    
+    // Path for the video file
+    const videoPath = path.join(tweetDir, `${tweetId}.mp4`);
     
     const response = await axios({
       method: 'GET',
@@ -238,6 +252,7 @@ async function downloadVideo(videoUrl, tweetId) {
     return null;
   }
 }
+
 
 /**
  * Checks if the tweet content contains video-related keywords
@@ -404,113 +419,128 @@ async function checkForVideo(page) {
       continue;
     }
 
-    if (hasKeyword && !isVideoOrClipTweet) {
-      console.log('🔍 Found keyword in tweet, checking for images...');
+    // Replace the existing image handling code with this improved version
+if (hasKeyword && !isVideoOrClipTweet) {
+  console.log('🔍 Found keyword in tweet, checking for images...');
 
-      try {
-        // Use the original nitter.net URL for web scraping
-        await page.goto(item.tweetLinkExtra);
-        await page.waitForSelector('.timeline-item', { timeout: 10000 });
+  try {
+    // Use the original nitter.net URL for web scraping
+    await page.goto(item.tweetLinkExtra);
+    await page.waitForSelector('.timeline-item', { timeout: 10000 });
 
-        const imageUrls = await page.evaluate(() => {
-          const attachmentDiv = document.querySelector('.attachments');
-          if (!attachmentDiv) return [];
+    const imageUrls = await page.evaluate(() => {
+      const attachmentDiv = document.querySelector('.attachments');
+      if (!attachmentDiv) return [];
 
-          const images = attachmentDiv.querySelectorAll('img');
-          return Array.from(images).map(img => img.src);
-        });
+      const images = attachmentDiv.querySelectorAll('img');
+      return Array.from(images).map(img => img.src);
+    });
 
-        if (imageUrls.length > 0) {
-          console.log(`🖼️ Found ${imageUrls.length} images in tweet`);
+    if (imageUrls.length > 0) {
+      console.log(`🖼️ Found ${imageUrls.length} images in tweet`);
 
-          const imagesDir = path.join(__dirname, 'tweet_images');
-          if (!fs.existsSync(imagesDir)) {
-            fs.mkdirSync(imagesDir);
-          }
-
-          for (let i = 0; i < imageUrls.length; i++) {
-            const imageUrl = imageUrls[i];
-            const imagePath = path.join(imagesDir, `${item.tweetId}_${i}.jpg`);
-
-            try {
-              const response = await page.goto(imageUrl);
-              const imageBuffer = await response.buffer();
-              fs.writeFileSync(imagePath, imageBuffer);
-              console.log(`✅ Saved image: ${imagePath}`);
-            } catch (error) {
-              console.error(`❌ Error downloading image ${imageUrl}:`, error);
-            }
-          }
-        } else {
-          console.log('⚠️ No images found in tweet');
-        }
-      } catch (error) {
-        console.error('❌ Error processing tweet images:', error);
+      // Create main images directory if it doesn't exist
+      const imagesDir = path.join(__dirname, 'tweet_images');
+      if (!fs.existsSync(imagesDir)) {
+        fs.mkdirSync(imagesDir);
       }
-    } else if (isVideoOrClipTweet || hasKeyword) {
-      console.log(`🎥 Found video/clip-related tweet or has keyword: ${item.tweetLinkExtra}`);
 
-      try {
-        // Use the original nitter.net URL for web scraping
-        await page.goto(item.tweetLinkExtra, { waitUntil: 'networkidle2' });
-        
-        // Check if this tweet actually has a video
-        const hasVideoContent = await checkForVideo(page);
-        
-        if (!hasVideoContent && !isVideoOrClipTweet) {
-          console.log('⚠️ This tweet contains keywords but no actual video, skipping video download');
-          continue;
-        }
-
-        const currentUrl = page.url();
-        const extractedTweetId = extractTweetIdFromUrl(currentUrl);
-
-        if (extractedTweetId) {
-          console.log(`🆔 Extracted tweet ID: ${extractedTweetId}`);
-
-          tweetData.tweetId = extractedTweetId;
-          
-          // Make sure the links are converted to x.com for this updated tweet data
-          tweetData.tweetLink = convertToXDotCom(tweetData.tweetLink);
-          tweetData.tweetLinkExtra = convertToXDotCom(tweetData.tweetLinkExtra);
-          
-          await insertTweet(tweetData);
-          
-          // Get tweet ID for video download
-          const tweetId = await page.evaluate(() => {
-            const linkElement = document.querySelector('.timeline-item a.tweet-link');
-            if (!linkElement) return null;
-            
-            // Extract just the ID from the URL
-            const href = linkElement.href;
-            const parts = href.split('/status/');
-            if (parts.length === 2) {
-              return parts[1].split(/[#?]/)[0];
-            }
-            return null;
-          });
-
-          if (tweetId) {
-            console.log(`🔢 Video/Clip tweet ID: ${tweetId}`);
-            
-            // Now use the videoDownloader module to get the video URL
-            const videoVariant = await videoDownloader(API_KEY, tweetId);
-            
-            if (videoVariant && videoVariant.url) {
-              console.log(`🎬 Found video URL: ${videoVariant.url}`);
-              
-              // Download the video
-              await downloadVideo(videoVariant.url, tweetId);
-            } else {
-              console.log('⚠️ No high-quality video found for this tweet');
-            }
-          }
-        } else {
-          console.log('⚠️ Could not extract tweet ID from URL');
-        }
-      } catch (error) {
-        console.error('❌ Error processing video/clip tweet:', error);
+      // Create a directory for this specific tweet
+      const tweetDir = path.join(imagesDir, item.tweetId);
+      if (!fs.existsSync(tweetDir)) {
+        fs.mkdirSync(tweetDir);
       }
+
+      // Save the tweet content to a text file in the tweet directory
+      const tweetContentPath = path.join(tweetDir, `${item.tweetId}.txt`);
+      fs.writeFileSync(tweetContentPath, finalTweetContent);
+      console.log(`📝 Saved tweet content: ${tweetContentPath}`);
+
+      // Download and save all images in the tweet directory
+      for (let i = 0; i < imageUrls.length; i++) {
+        const imageUrl = imageUrls[i];
+        const imagePath = path.join(tweetDir, `${item.tweetId}.jpg`);
+        
+        try {
+          const response = await page.goto(imageUrl);
+          const imageBuffer = await response.buffer();
+          fs.writeFileSync(imagePath, imageBuffer);
+          console.log(`✅ Saved image: ${imagePath}`);
+        } catch (error) {
+          console.error(`❌ Error downloading image ${imageUrl}:`, error);
+        }
+      }
+    } else {
+      console.log('⚠️ No images found in tweet');
+    }
+  } catch (error) {
+    console.error('❌ Error processing tweet images:', error);
+  }
+} else if (isVideoOrClipTweet || hasKeyword) {
+  console.log(`🎥 Found video/clip-related tweet or has keyword: ${item.tweetLinkExtra}`);
+  
+  try {
+    // Use the original nitter.net URL for web scraping
+    await page.goto(item.tweetLinkExtra, { waitUntil: 'networkidle2' });
+    
+    // Check if this tweet actually has a video
+    const hasVideoContent = await checkForVideo(page);
+    
+    if (!hasVideoContent && !isVideoOrClipTweet) {
+      console.log('⚠️ This tweet contains keywords but no actual video, skipping video download');
+      continue;
+    }
+
+    const currentUrl = page.url();
+    const extractedTweetId = extractTweetIdFromUrl(currentUrl);
+
+    if (extractedTweetId) {
+      console.log(`🆔 Extracted tweet ID: ${extractedTweetId}`);
+
+      tweetData.tweetId = extractedTweetId;
+      
+      // Make sure the links are converted to x.com for this updated tweet data
+      tweetData.tweetLink = convertToXDotCom(tweetData.tweetLink);
+      tweetData.tweetLinkExtra = convertToXDotCom(tweetData.tweetLinkExtra);
+      
+      await insertTweet(tweetData);
+      
+      // Get tweet ID for video download
+      const tweetId = await page.evaluate(() => {
+        const linkElement = document.querySelector('.timeline-item a.tweet-link');
+        if (!linkElement) return null;
+        
+        // Extract just the ID from the URL
+        const href = linkElement.href;
+        const parts = href.split('/status/');
+        if (parts.length === 2) {
+          return parts[1].split(/[#?]/)[0];
+        }
+        return null;
+      });
+
+      if (tweetId) {
+        console.log(`🔢 Video/Clip tweet ID: ${tweetId}`);
+        
+        // Now use the videoDownloader module to get the video URL
+        const videoVariant = await videoDownloader(API_KEY, tweetId);
+        
+        if (videoVariant && videoVariant.url) {
+          console.log(`🎬 Found video URL: ${videoVariant.url}`);
+          
+          // Download the video and save tweet content, passing the finalTweetContent
+          await downloadVideo(videoVariant.url, tweetId, finalTweetContent);
+        } else {
+          console.log('⚠️ No high-quality video found for this tweet');
+        }
+      }
+    } else {
+      console.log('⚠️ Could not extract tweet ID from URL');
+    }
+  } catch (error) {
+    console.error('❌ Error processing video/clip tweet:', error);
+  }
+
     }
   }
 
