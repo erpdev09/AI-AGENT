@@ -5,7 +5,6 @@ const path = require('path');
 const axios = require('axios');
 const { videoDownloader } = require('../../packages/twitterapi.io/main/scrapevideo'); // Import the video downloader module
 
-
 const API_KEY = '';
 
 // Function to detect Solana addresses in text
@@ -14,6 +13,45 @@ function containsSolanaAddress(text) {
   const solanaAddressRegex = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
   return solanaAddressRegex.test(text);
 }
+
+/**
+ * Checks parent tweet for Solana address
+ * @param {Page} page - Puppeteer page object
+ * @param {string} tweetUrl - URL of the reply tweet
+ * @returns {Promise<string|null>} - Solana address from parent tweet or null if not found
+ */
+async function solCheckParent(page, tweetUrl) {
+  try {
+    console.log(`🔍 Checking parent tweet for Solana address: ${tweetUrl}`);
+    
+    await page.goto(tweetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    
+    // Wait for the tweet thread to load
+    await page.waitForSelector('.main-thread', { timeout: 10000 });
+    
+    // Get the parent tweet content
+    const parentTweetContent = await page.evaluate(() => {
+      const parentTweetElement = document.querySelector('.main-thread .timeline-item:first-child .tweet-content');
+      if (parentTweetElement) {
+        return parentTweetElement.innerText.trim();
+      }
+      return null;
+    });
+    
+    if (parentTweetContent && containsSolanaAddress(parentTweetContent)) {
+      const solanaAddressMatch = parentTweetContent.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/);
+      console.log(`✅ Found Solana address in parent tweet: ${solanaAddressMatch[0]}`);
+      return solanaAddressMatch[0];
+    } else {
+      console.log('⚠️ No Solana address found in parent tweet');
+      return null;
+    }
+  } catch (error) {
+    console.error(`❌ Error checking parent tweet for Solana address: ${error.message}`);
+    return null;
+  }
+}
+
 async function checkAndUpdateConstraints() {
   const client = await pool.connect();
   try {
@@ -161,7 +199,7 @@ async function getParentTweetContent(page, tweetUrl) {
  */
 async function downloadVideo(videoUrl, tweetId) {
   try {
-    console.log(`🔽 Downloading video from: ${videoUrl}`);
+    console.log(`🔢 Downloading video from: ${videoUrl}`);
     
     const videosDir = path.join(__dirname, 'tweet_videos');
     if (!fs.existsSync(videosDir)) {
@@ -198,6 +236,49 @@ async function downloadVideo(videoUrl, tweetId) {
   } catch (error) {
     console.error(`❌ Error downloading video: ${error.message}`);
     return null;
+  }
+}
+
+/**
+ * Checks if the tweet content contains video-related keywords
+ * @param {string} content - Tweet content to check
+ * @returns {boolean} - True if the content contains video-related keywords
+ */
+function containsVideoKeywords(content) {
+  const videoKeywords = [
+    'video', 
+    'clip', 
+    'swap from this video', 
+    'swap this video',
+    'buy from this video',
+    'get this coin from this video'
+  ];
+  
+  const lowerContent = content.toLowerCase();
+  return videoKeywords.some(keyword => lowerContent.includes(keyword.toLowerCase()));
+}
+
+/**
+ * Checks if tweet has a video 
+ * @param {Page} page - Puppeteer page object
+ * @returns {Promise<boolean>} - True if the tweet has video
+ */
+async function checkForVideo(page) {
+  try {
+    const hasVideo = await page.evaluate(() => {
+      // Check for video elements in the attachments div
+      const attachmentsDiv = document.querySelector('.attachments');
+      if (!attachmentsDiv) return false;
+      
+      // Check for .video-container or video elements
+      return !!attachmentsDiv.querySelector('.video-container') || 
+             !!attachmentsDiv.querySelector('video');
+    });
+    
+    return hasVideo;
+  } catch (error) {
+    console.error('Error checking for video:', error);
+    return false;
   }
 }
 
@@ -249,10 +330,10 @@ async function downloadVideo(videoUrl, tweetId) {
 
       itemData.push({
         tweetContent: cleanedTweetContent,
-        userName,
-        tweetLink,
-        tweetLinkExtra,
-        tweetId,
+        userName: userName,
+        tweetLink: tweetLink,
+        tweetLinkExtra: tweetLinkExtra,
+        tweetId: tweetId
       });
     });
 
@@ -277,33 +358,33 @@ async function downloadVideo(videoUrl, tweetId) {
     const convertedTweetLinkExtra = convertToXDotCom(item.tweetLinkExtra);
     
     let finalTweetContent = item.tweetContent;
-    
+    let hasSolanaAddress = containsSolanaAddress(item.tweetContent);
+
     // Check if this is a reply tweet and doesn't contain a Solana address
-    if (isRepliedTweet && !containsSolanaAddress(item.tweetContent)) {
-      console.log('🔄 This is a reply without Solana address, fetching parent tweet context...');
-      const parentTweetContent = await getParentTweetContent(page, item.tweetLinkExtra);
-      if (parentTweetContent) {
-        console.log('➕ Extracting Solana wallet from parent tweet content');
-        // Regular expression to match Solana wallet addresses (44 chars, base58)
-        const solanaAddressMatch = parentTweetContent.match(/[1-9A-HJ-NP-Za-km-z]{44}/);
-        const solanaAddress = solanaAddressMatch ? solanaAddressMatch[0] : '';
-        if (solanaAddress) {
-          console.log('➕ Appending Solana wallet to tweet content');
-          finalTweetContent = `${finalTweetContent} ${solanaAddress}`;
-        } else {
-          console.log('⚠️ No Solana wallet found in parent tweet content');
-          finalTweetContent = `[PARENT TWEET: ${parentTweetContent}] ${finalTweetContent}`;
+    if (isRepliedTweet && !hasSolanaAddress) {
+      console.log('🔄 This is a reply without Solana address, checking parent tweet...');
+      const solanaAddress = await solCheckParent(page, item.tweetLinkExtra);
+      if (solanaAddress) {
+        console.log('➕ Appending Solana address from parent tweet');
+        finalTweetContent = `${finalTweetContent} ${solanaAddress}`;
+        hasSolanaAddress = true;
+      } else {
+        console.log('🔍 Fetching parent tweet content for additional context...');
+        const parentTweetContent = await getParentTweetContent(page, item.tweetLinkExtra);
+        if (parentTweetContent) {
+          finalTweetContent = `${finalTweetContent} ${parentTweetContent}`;
         }
       }
     }
+
     const tweetData = {
       tweetId: item.tweetId,
       userName: item.userName,
       tweetContent: finalTweetContent,
-      tweetLink: convertedTweetLinkExtra, // Both links are the same, using convertedTweetLinkExtra
+      tweetLink: convertedTweetLinkExtra,
       tweetLinkExtra: convertedTweetLinkExtra,
-      isRepliedTweet,
-      isDirectTag
+      isRepliedTweet: isRepliedTweet,
+      isDirectTag: isDirectTag
     };
 
     console.log('➡️ Processing tweet:', tweetData.tweetId);
@@ -314,13 +395,20 @@ async function downloadVideo(videoUrl, tweetId) {
       item.tweetContent.toLowerCase().includes(keyword.toLowerCase())
     );
 
-    const isVideoOrClipTweet = /video|clip/i.test(item.tweetContent);
+    // Check for video-related keywords using the new function
+    const isVideoOrClipTweet = containsVideoKeywords(item.tweetContent);
+
+    // Skip image/video processing if a Solana address is already present
+    if (hasSolanaAddress) {
+      console.log('✅ Solana address already captured, skipping image/video processing');
+      continue;
+    }
 
     if (hasKeyword && !isVideoOrClipTweet) {
       console.log('🔍 Found keyword in tweet, checking for images...');
 
       try {
-        // Use the original nitter.net URL for web scraping (not the converted x.com URL)
+        // Use the original nitter.net URL for web scraping
         await page.goto(item.tweetLinkExtra);
         await page.waitForSelector('.timeline-item', { timeout: 10000 });
 
@@ -359,12 +447,20 @@ async function downloadVideo(videoUrl, tweetId) {
       } catch (error) {
         console.error('❌ Error processing tweet images:', error);
       }
-    } else if (isVideoOrClipTweet) {
-      console.log(`🎥 Found video/clip-related tweet: ${item.tweetLinkExtra}`);
+    } else if (isVideoOrClipTweet || hasKeyword) {
+      console.log(`🎥 Found video/clip-related tweet or has keyword: ${item.tweetLinkExtra}`);
 
       try {
-        // Use the original nitter.net URL for web scraping (not the converted x.com URL)
+        // Use the original nitter.net URL for web scraping
         await page.goto(item.tweetLinkExtra, { waitUntil: 'networkidle2' });
+        
+        // Check if this tweet actually has a video
+        const hasVideoContent = await checkForVideo(page);
+        
+        if (!hasVideoContent && !isVideoOrClipTweet) {
+          console.log('⚠️ This tweet contains keywords but no actual video, skipping video download');
+          continue;
+        }
 
         const currentUrl = page.url();
         const extractedTweetId = extractTweetIdFromUrl(currentUrl);
