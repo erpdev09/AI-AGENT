@@ -22,7 +22,7 @@ async function spltokentransfer(base58PrivateKey, destinationWallet, mintAddress
     const secretKey = bs58.decode(base58PrivateKey);
     const FROM_KEYPAIR = Keypair.fromSecretKey(secretKey);
 
-    const QUICKNODE_RPC = 'https://api.mainnet-beta.solana.com';
+    const QUICKNODE_RPC = '';
     const SOLANA_CONNECTION = new Connection(QUICKNODE_RPC, 'confirmed');
 
     async function getNumberDecimals(mintAddress) {
@@ -59,6 +59,8 @@ async function spltokentransfer(base58PrivateKey, destinationWallet, mintAddress
     console.log(`    Number of Decimals: ${numberDecimals}`);
 
     console.log(`4 - Creating and Sending Transaction`);
+
+    // Create transaction
     const tx = new Transaction().add(
         createTransferInstruction(
             sourceAccount.address,
@@ -68,10 +70,12 @@ async function spltokentransfer(base58PrivateKey, destinationWallet, mintAddress
         )
     );
 
+    // Get fresh blockhash and set it to the transaction
     const { blockhash } = await SOLANA_CONNECTION.getLatestBlockhash();
     tx.recentBlockhash = blockhash;
     tx.feePayer = fromPubkey;
 
+    // Retry the transaction in case the first attempt fails
     try {
         const signature = await sendAndConfirmTransaction(SOLANA_CONNECTION, tx, [FROM_KEYPAIR]);
         console.log(
