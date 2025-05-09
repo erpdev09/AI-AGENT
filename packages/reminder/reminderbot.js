@@ -1,54 +1,144 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const { getReminderTime } = require('./utils/helper');
-const pool = require('../../config/dbconnect'); // Import pool from your dbconnect
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+// File: reminderstart.js
 
-// Initialize the Express app
-const app = express();
-const port = 5000;
+// Adjust path to your database connection pool setup
+const pool = require('../../config/dbconnect'); 
 
-// Middleware to parse JSON bodies
-app.use(bodyParser.json());
+// Adjust path to the extractReminderTweetsModule.js file shown above
+const extractReminderTweets = require('./utils/helper'); 
 
-// API Route to Add Reminder
-app.post('/api/addreminder/:duration', async (req, res) => {
-  const { duration } = req.params;
-  const { username, tweetid } = req.body;
+const axios = require('axios');
 
-  if (!username || !tweetid) {
-    return res.status(400).json({ error: 'Missing username or tweetid' });
-  }
+const REPLY_ENDPOINT_URL = 'http://localhost:3000/api/replytospecifictweet';
+const REPLY_MESSAGE = 'u are remade';
 
-  let remindTime;
+// Intervals in milliseconds
+const EXTRACT_TWEETS_INTERVAL_MS = 1 * 60 * 1000; 
+const CHECK_REMINDERS_INTERVAL_MS = 1 * 60 * 1000; 
+
+let extractIntervalId;
+let checkIntervalId;
+
+/**
+ * Sends a reply notification to the specified tweet.
+ * @param {string} tweetId - The ID of the tweet to reply to.
+ * @param {string} replyMessage - The message content for the reply.
+ * @returns {Promise<boolean>} - True if successful, false otherwise.
+ */
+async function sendReplyNotification(tweetId, replyMessage) {
   try {
-    remindTime = getReminderTime(duration);  // Get UTC reminder time
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-
-  try {
-    await pool.query(
-      'INSERT INTO remindme (username, remindmetime, tweetid) VALUES ($1, $2, $3)',
-      [username, remindTime, tweetid]
-    );
-
-    return res.status(200).json({
-      message: `Reminder set for @${username}`,
-      remindTime,
+    console.log(`Attempting to send reply to Tweet ID: ${tweetId}`);
+    const response = await axios.post(REPLY_ENDPOINT_URL, {
+      tweetId: tweetId,
+      replyMessage: replyMessage,
     });
-  } catch (err) {
-    console.error('❌ Error inserting reminder:', err);
-    return res.status(500).json({ error: 'Database error' });
+    console.log(`→ Reply sent successfully for Tweet ID: ${tweetId}. Status: ${response.status}`);
+    return true;
+  } catch (error) {
+    console.error(`→ Failed to send reply for Tweet ID ${tweetId}:`, error.response ? error.response.data : error.message);
+    return false;
   }
-});
-// add a helper function to again fetch the db and check for something that has already
-// converef like current vs old db data and do the neceassry
-// like priorty the first that closed or nearst
+}
 
+/**
+ * Checks for due reminders in the 'remindme' table and processes them.
+ */
+async function checkAndSendDueReminders() {
+  console.log('Checking for due reminders...');
+  const client = await pool.connect(); 
+  try {
+    const query = `
+      SELECT id, tweetid, username, remindmetime
+      FROM remindme
+      WHERE remindmetime <= NOW() 
+    `; 
+    // For a more robust system, consider adding a 'processed' flag or similar
+    // to avoid reprocessing indefinitely on temporary send failures.
 
-// Start the server
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+    const { rows } = await client.query(query);
+
+    if (rows.length === 0) {
+      console.log('No due reminders found at this time.');
+      return;
+    }
+
+    console.log(`Found ${rows.length} due reminders.`);
+
+    for (const reminder of rows) {
+      console.log(`Processing reminder for @${reminder.username} (Tweet ID: ${reminder.tweetid}) scheduled for ${reminder.remindmetime}`);
+
+      const success = await sendReplyNotification(reminder.tweetid, REPLY_MESSAGE);
+
+      if (success) {
+        try {
+          await client.query('DELETE FROM remindme WHERE id = $1', [reminder.id]);
+          console.log(`→ Reminder for Tweet ID ${reminder.tweetid} (DB ID: ${reminder.id}) deleted successfully.`);
+        } catch (deleteErr) {
+          console.error(`→ Failed to delete reminder for Tweet ID ${reminder.tweetid} (DB ID: ${reminder.id}):`, deleteErr.message);
+        }
+      } else {
+        console.log(`→ Reply for Tweet ID ${reminder.tweetid} failed. Reminder will be re-processed in the next check.`);
+      }
+    }
+  } catch (err) {
+    console.error('Error checking or processing reminders:', err.message);
+  } finally {
+    client.release(); // Release the client back to the pool
+  }
+}
+
+/**
+ * Main function to start the reminder service.
+ */
+async function startReminderService() {
+  console.log('Reminder service starting...');
+
+  console.log('Performing initial tweet extraction...');
+  try {
+    await extractReminderTweets(); // Ensure this doesn't call pool.end()
+  } catch (err) {
+    console.error('Initial tweet extraction failed:', err.message);
+  }
+
+  console.log('Performing initial check for due reminders...');
+  await checkAndSendDueReminders();
+
+  extractIntervalId = setInterval(async () => {
+    console.log('Periodic tweet extraction triggered...');
+    try {
+      await extractReminderTweets();
+    } catch (err) {
+      console.error('Periodic tweet extraction failed:', err.message);
+    }
+  }, EXTRACT_TWEETS_INTERVAL_MS);
+
+  checkIntervalId = setInterval(checkAndSendDueReminders, CHECK_REMINDERS_INTERVAL_MS);
+
+  console.log(`Service started. Tweet extraction interval: ${EXTRACT_TWEETS_INTERVAL_MS / 1000}s. Reminder check interval: ${CHECK_REMINDERS_INTERVAL_MS / 1000}s.`);
+}
+
+// Graceful shutdown
+async function shutdown() {
+  console.log('Shutting down reminder service...');
+  clearInterval(extractIntervalId);
+  clearInterval(checkIntervalId);
+
+  try {
+    await pool.end();
+    console.log('Database pool has been closed.');
+  } catch (err) {
+    console.error('Error closing the database pool:', err.message);
+  }
+  process.exit(0);
+}
+
+process.on('SIGINT', shutdown); 
+process.on('SIGTERM', shutdown);
+
+// Start the service
+startReminderService().catch(err => {
+  console.error("Failed to start reminder service:", err);
+  if (err.message.includes("Cannot use a pool after calling end on the pool")) {
+    console.error("This error often means 'extractReminderTweetsModule.js' is still calling 'pool.end()'. Please double-check it has been removed or commented out.");
+  }
+  process.exit(1);
 });

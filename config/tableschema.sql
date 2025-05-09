@@ -32,7 +32,7 @@ my_new_database=> SELECT * FROM tweets;
 // Table Schema for reminder bot
 
 CREATE TABLE remindme (
-  id SERIAL PRIMARY KEY,
+  id BIGINT PRIMARY KEY,
   username TEXT NOT NULL,
   remindmetime TIMESTAMP NOT NULL,
   tweetid TEXT NOT NULL,
@@ -96,3 +96,4 @@ CREATE TABLE "public"."giveaway" (
     "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "action_performed" BOOLEAN DEFAULT false
 );
+
