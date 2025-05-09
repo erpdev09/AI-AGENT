@@ -1,27 +1,36 @@
+// api.js
+// --- Core Dependencies ---
 const express = require('express');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') }); // Ensure .env is loaded from parent directory
 
-
-/*  Update here
-the improve model would be 
---> to perform one txn in one go, and wait for one min
---> and then to update on the db from this code on higher level (if succesful--> update the action_perform)
---> we use a trigger code, that will call, the api, endpoint but that 
----> output doesn't define, but it's define by this main.js 
-
---> and then not to show any action_perform to /todoactivity once true
-*/
-const { swap } = require('../packages/wallet/swaptoken/swap');
-const { searchTweets } = require('../twitter-scrapper/custom-scrapper/actionhandler/analyzetweet');
-const { Connection, Keypair, Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
+// --- Solana and Utility Dependencies ---
+const {
+  Connection,
+  Keypair,
+  Transaction,
+  SystemProgram,
+  PublicKey,
+  LAMPORTS_PER_SOL,
+  sendAndConfirmTransaction // For simpler transactions
+} = require('@solana/web3.js');
 const bs58 = require('bs58');
-const spltokentransfer = require('../packages/wallet/transfertoken/soltoken');
 
+// --- Project-Specific Modules ---
+// Ensure these paths are correct relative to your api.js file
+const { swap } = require('../packages/wallet/swaptoken/swap'); // For Jupiter swaps
+const { searchTweets } = require('../twitter-scrapper/custom-scrapper/actionhandler/analyzetweet'); // Fetches tweets
+const spltokentransfer = require('../packages/wallet/transfertoken/soltoken'); // For SPL token transfers
+
+// --- Database and Local Modules ---
+const { updateTweetActionStatus } = require('../helper/txn/updateTweetActionStatus'); // Assumes in the same directory
+const pool = require('../config/dbconnect'); // Adjust path if your dbconnect.js is elsewhere
+
+// --- Express App Initialization ---
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Token address mapping for common tokens
+// --- Configuration & Constants ---
 const TOKEN_ADDRESSES = {
   'SOL': 'So11111111111111111111111111111111111111112',
   'USDC': 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -32,47 +41,85 @@ const TOKEN_ADDRESSES = {
   'BERT': 'HgBRWfYxEfvPhtqkaeymCQtHCrKE46qQ43pKe8HCpump',
   'TRUMP': '6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN',
   'RNDR': 'rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof',
-  'PENGU':'2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv',
-  'FART':'9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump',
+  'PENGU': '2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv',
+  'FART': '9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump',
 };
+const DEFAULT_SLIPPAGE_BPS = 100; // 1% slippage for swaps
 
-// Load sender SOL private key (for SOL transfers)
+// --- Solana Connection & Sender Wallet Setup ---
 const senderKeyBase58 = process.env.SOLANA_PRIVATE_KEY;
-if (!senderKeyBase58) throw new Error('Missing SOLANA_PRIVATE_KEY in .env');
+if (!senderKeyBase58) {
+  console.error('FATAL ERROR: Missing SOLANA_PRIVATE_KEY in .env file. This is required to send transactions.');
+  process.exit(1);
+}
 
 let sender;
 try {
   const secretKey = bs58.decode(senderKeyBase58);
   sender = Keypair.fromSecretKey(secretKey);
-  console.log("✅ Loaded sender:", sender.publicKey.toBase58());
+  console.log("✅ Loaded sender wallet:", sender.publicKey.toBase58());
 } catch (err) {
-  throw new Error('Invalid SOLANA_PRIVATE_KEY format. It must be a base58 string.');
+  console.error('FATAL ERROR: Invalid SOLANA_PRIVATE_KEY format. It must be a base58 string.', err);
+  process.exit(1);
+}
+
+const solanaRpcUrl = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+const connection = new Connection(solanaRpcUrl, 'confirmed');
+console.log(`🔗 Connected to Solana RPC: ${solanaRpcUrl}`);
+
+// === Helper Functions ===
+function resolveTokenAddress(symbolOrAddress) {
+  if (!symbolOrAddress) return null;
+
+  const trimmedInput = String(symbolOrAddress).trim();
+  const upperCaseSymbolKey = trimmedInput.toUpperCase(); 
+
+  if (TOKEN_ADDRESSES[upperCaseSymbolKey]) {
+    return TOKEN_ADDRESSES[upperCaseSymbolKey];
+  }
+
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmedInput)) {
+    try {
+      new PublicKey(trimmedInput); 
+      return trimmedInput; 
+    } catch (e) {
+      console.warn(`⚠️ resolveTokenAddress: Regex matched but PublicKey validation failed for: ${trimmedInput}`, e.message);
+    }
+  }
+  console.warn(`⚠️ resolveTokenAddress: Unknown token symbol or invalid address: ${symbolOrAddress}`);
+  return null;
 }
 
 
-const connection = new Connection('https://api.mainnet-beta.solana.com');
-
-// === SOL transfer route ===
-app.get('/transfertoken/:amount/:recipient', async (req, res) => {
-  const { amount, recipient } = req.params;
-
+function isValidSolanaAddress(address) {
+  if (!address) return false;
   try {
+    new PublicKey(address); 
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+  } catch {
+    return false;
+  }
+}
+
+// === Direct API Routes (for testing or direct invocation) ===
+app.get('/direct/transfertoken/:amount/:recipient', async (req, res) => {
+  const { amount, recipient } = req.params;
+  console.log(`DIRECT CALL: /transfertoken - Amount: ${amount}, Recipient: ${recipient}`);
+  try {
+    if (!isValidSolanaAddress(recipient)) {
+      return res.status(400).json({ error: 'Invalid recipient address format.' });
+    }
     const toPublicKey = new PublicKey(recipient);
     const amountSOL = parseFloat(amount);
 
     if (isNaN(amountSOL) || amountSOL <= 0) {
-      const errorResponse = { error: 'Invalid amount' };
-      console.log(errorResponse);
-      return res.status(400).json(errorResponse);
+      return res.status(400).json({ error: 'Invalid amount. Must be a positive number.' });
     }
-
-    const senderBalance = await connection.getBalance(sender.publicKey);
     const lamports = amountSOL * LAMPORTS_PER_SOL;
-
-    if (senderBalance < lamports + 0.002 * LAMPORTS_PER_SOL) {
-      const errorResponse = { error: 'Insufficient balance' };
-      console.log(errorResponse);
-      return res.status(400).json(errorResponse);
+    const senderBalance = await connection.getBalance(sender.publicKey);
+    const estimatedFee = 5000;
+    if (senderBalance < lamports + estimatedFee) {
+      return res.status(400).json({ error: `Insufficient SOL balance. Have: ${senderBalance / LAMPORTS_PER_SOL} SOL.` });
     }
 
     const transaction = new Transaction().add(
@@ -82,324 +129,422 @@ app.get('/transfertoken/:amount/:recipient', async (req, res) => {
         lamports,
       })
     );
-
     transaction.feePayer = sender.publicKey;
-
-    const signature = await connection.sendTransaction(transaction, [sender]);
-
+    const signature = await sendAndConfirmTransaction(connection, transaction, [sender]);
     const successResponse = {
-      message: 'Transfer successful',
+      message: 'Direct SOL Transfer successful!',
       signature,
-      explorer: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
+      explorer: `https://explorer.solana.com/tx/${signature}?cluster=mainnet-beta`,
     };
-
     console.log(successResponse);
     res.json(successResponse);
   } catch (err) {
-    console.error(err);
-    const errorResponse = { error: 'Transfer failed', details: err.message };
-    console.log(errorResponse);
-    res.status(500).json(errorResponse);
+    console.error("Direct SOL Transfer Error:", err);
+    res.status(500).json({ error: 'Direct SOL Transfer failed.', details: err.message, stack: err.stack });
   }
 });
 
-// === SPL Token transfer route ===
-app.get('/api/sendspltoken/:contractaddress/:amount/:recipient', async (req, res) => {
+app.get('/direct/sendspltoken/:contractaddress/:amount/:recipient', async (req, res) => {
   const { contractaddress, amount, recipient } = req.params;
+  console.log(`DIRECT CALL: /sendspltoken - Contract: ${contractaddress}, Amount: ${amount}, Recipient: ${recipient}`);
 
-  const privateKeyHex = process.env.SOLANA_PRIVATE_KEY; // should be stored securely
-  if (!privateKeyHex) {
-    return res.status(500).json({ error: 'PRIVATE_KEY is missing from .env' });
+  if (!isValidSolanaAddress(contractaddress)) {
+    return res.status(400).json({ error: 'Invalid SPL token contract address format.' });
+  }
+  if (!isValidSolanaAddress(recipient)) {
+    return res.status(400).json({ error: 'Invalid recipient address format.' });
+  }
+  const parsedAmount = parseFloat(amount);
+  if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    return res.status(400).json({ error: 'Invalid amount. Must be a positive number.' });
   }
 
   try {
-    console.log(`⚙️  Initiating SPL Token Transfer`);
-    await spltokentransfer(privateKeyHex, recipient, contractaddress, parseFloat(amount));
+    console.log(`⚙️  Initiating direct SPL Token Transfer: ${parsedAmount} of ${contractaddress} to ${recipient}`);
+    const transferResult = await spltokentransfer(senderKeyBase58, recipient, contractaddress, parsedAmount);
     const response = {
-      message: 'SPL Token transfer initiated. Check logs for transaction status.',
+      message: 'Direct SPL Token transfer initiated successfully.',
+      details: transferResult 
     };
     console.log(response);
     res.json(response);
   } catch (err) {
-    const errorResponse = { error: 'SPL token transfer failed', details: err.message };
-    console.error(errorResponse);
-    res.status(500).json(errorResponse);
+    console.error("Direct SPL Token Transfer Error:", err);
+    res.status(500).json({ error: 'Direct SPL token transfer failed.', details: err.message, stack: err.stack });
   }
 });
 
-// === Swap SOL to token route ===
-app.get('/swaptoken/:totoken/:foramount', async (req, res) => {
+app.get('/direct/swaptoken/sol-to/:totoken/:foramount', async (req, res) => {
   const { totoken, foramount } = req.params;
+  console.log(`DIRECT CALL: /swaptoken/sol-to - To Token: ${totoken}, SOL Amount: ${foramount}`);
+
+  const toTokenAddress = resolveTokenAddress(totoken);
+  if (!toTokenAddress) {
+    return res.status(400).json({ error: `Invalid or unknown 'to token': ${totoken}` });
+  }
+  const amountSOL = parseFloat(foramount);
+  if (isNaN(amountSOL) || amountSOL <= 0) {
+    return res.status(400).json({ error: 'Invalid SOL amount. Must be a positive number.' });
+  }
+
   try {
+    console.log(`Attempting direct swap: ${amountSOL} SOL to ${totoken} (${toTokenAddress})`);
     const txid = await swap({
-      fromToken: "So11111111111111111111111111111111111111112", // SOL
-      toToken: totoken,
-      amount: parseFloat(foramount),
+      fromToken: TOKEN_ADDRESSES['SOL'],
+      toToken: toTokenAddress,
+      amount: amountSOL,
+      userPublicKey: sender.publicKey.toBase58(),
+      slippageBps: DEFAULT_SLIPPAGE_BPS
     });
     res.json({
-      message: "Swap successful",
+      message: "Direct SOL to Token Swap successful!",
       txid,
       explorer: `https://solscan.io/tx/${txid}`
     });
   } catch (err) {
-    res.status(500).json({ error: 'Swap failed', details: err.message });
+    console.error("Direct SOL to Token Swap Error:", err);
+    res.status(500).json({ error: 'Direct SOL to Token Swap failed.', details: err.message, stack: err.stack });
   }
 });
 
-// === Swap from any token to any token ===
-app.get('/swaptoken/:from/:to/:amount', async (req, res) => {
+app.get('/direct/swaptoken/:from/:to/:amount', async (req, res) => {
   const { from, to, amount } = req.params;
+  console.log(`DIRECT CALL: /swaptoken - From: ${from}, To: ${to}, Amount: ${amount}`);
+
+  const fromTokenAddress = resolveTokenAddress(from);
+  const toTokenAddress = resolveTokenAddress(to);
+
+  if (!fromTokenAddress) return res.status(400).json({ error: `Invalid or unknown 'from token': ${from}` });
+  if (!toTokenAddress) return res.status(400).json({ error: `Invalid or unknown 'to token': ${to}` });
+  if (fromTokenAddress === toTokenAddress) return res.status(400).json({ error: 'From and To tokens cannot be the same.' });
+  
+  const parsedAmount = parseFloat(amount);
+  if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    return res.status(400).json({ error: 'Invalid amount. Must be a positive number.' });
+  }
+
   try {
+    console.log(`Attempting direct swap: ${parsedAmount} of ${from} (${fromTokenAddress}) to ${to} (${toTokenAddress})`);
     const txid = await swap({
-      fromToken: from,
-      toToken: to,
-      amount: parseFloat(amount),
+      fromToken: fromTokenAddress,
+      toToken: toTokenAddress,
+      amount: parsedAmount,
+      userPublicKey: sender.publicKey.toBase58(),
+      slippageBps: DEFAULT_SLIPPAGE_BPS
     });
     res.json({
-      message: "Swap successful",
+      message: "Direct Token to Token Swap successful!",
       txid,
       explorer: `https://solscan.io/tx/${txid}`
     });
   } catch (err) {
-    res.status(500).json({ error: 'Swap failed', details: err.message });
+    console.error("Direct Token to Token Swap Error:", err);
+    res.status(500).json({ error: 'Direct Token to Token Swap failed.', details: err.message, stack: err.stack });
   }
 });
 
 /**
- * Resolves token symbol to address
- * @param {string} symbol - Token symbol (e.g. 'SOL', 'USDC')
- * @returns {string} - Token address or original input if not found in mapping
- */
-function resolveTokenAddress(symbol) {
-  // First normalize the input symbol by removing spaces and converting to uppercase
-  const normalizedSymbol = symbol.replace(/\s+/g, '').toUpperCase();
-  
-  // Check if it's already an address (starts with a letter and is long)
-  if (normalizedSymbol.length > 30 && /^[A-Za-z]/.test(normalizedSymbol)) {
-    return normalizedSymbol; // Already an address
-  }
-  
-  // Check in our token mapping
-  if (TOKEN_ADDRESSES[normalizedSymbol]) {
-    return TOKEN_ADDRESSES[normalizedSymbol];
-  }
-  
-  // If we don't have a mapping, return the original value
-  console.warn(`⚠️ Unknown token symbol: ${normalizedSymbol}`);
-  return symbol;
-}
-
-/**
- * Check if an address is a valid Solana address
- * @param {string} address - Potential Solana address
- * @returns {boolean} - True if valid Solana address format
- */
-function isValidSolanaAddress(address) {
-  try {
-    // Check that it's a valid public key format
-    new PublicKey(address);
-    // Additional check for length (Solana addresses are typically 32-44 characters)
-    return address.length >= 32 && address.length <= 44;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Execute the appropriate action based on tweet data
- * @param {Object} tweetData - Extracted data from tweet
- * @returns {Object} - Result of operation
+ * Core logic to execute an action (swap or transfer) based on parsed tweet data.
  */
 async function executeAction(tweetData) {
-  try {
-    const { keywords, contracts, tokenAmounts, symbols } = tweetData;
-    const keywordsLower = keywords.map(k => k.toLowerCase());
+  const { keywords, contracts, tokenAmounts, symbols, tweet_link_extra, content } = tweetData;
 
-    let recipient = contracts.find(contract => isValidSolanaAddress(contract));
-    let amount = tokenAmounts?.find(a => !isNaN(parseFloat(a))) || null;
-    amount = amount ? parseFloat(amount) : null;
-
-    let fromToken = 'SOL';
-    let toToken = null;
-
-    if (symbols?.length) {
-      if (symbols.length >= 2 && keywordsLower.includes('swap')) {
-        fromToken = symbols[0];
-        toToken = symbols[1];
-      } else if (symbols.length === 1) {
-        if (keywordsLower.includes('swap')) {
-          toToken = symbols[0];
-        } else if (keywordsLower.some(k => k === 'send' || k === 'transfer')) {
-          fromToken = symbols[0];
-        }
-      }
-    }
-
-    const isSwap = keywordsLower.includes('swap');
-    const isSend = keywordsLower.some(k => k === 'send' || k === 'transfer');
-
-    if (isSwap) {
-      const fromTokenAddress = resolveTokenAddress(fromToken);
-      const toTokenAddress = resolveTokenAddress(toToken);
-
-      if (!amount) amount = 0.1;
-
-      console.log(`🔄 Swapping ${amount} from ${fromToken} → ${toToken}`);
-      const txid = await swap({
-        fromToken: fromTokenAddress,
-        toToken: toTokenAddress,
-        amount,
-      });
-
-      return {
-        action: 'swap',
-        from: fromToken,
-        to: toToken,
-        amount,
-        txid,
-        explorer: `https://solscan.io/tx/${txid}`,
-      };
-    } else if (isSend && recipient) {
-      const tokenAddress = resolveTokenAddress(fromToken);
-      if (!amount) throw new Error('Missing amount for send');
-
-      if (fromToken.toUpperCase() === 'SOL') {
-        console.log(`💸 Sending ${amount} SOL to ${recipient}`);
-        const toPublicKey = new PublicKey(recipient);
-        const lamports = amount * LAMPORTS_PER_SOL;
-
-        const tx = new Transaction().add(
-          SystemProgram.transfer({
-            fromPubkey: sender.publicKey,
-            toPubkey: toPublicKey,
-            lamports,
-          })
-        );
-        tx.feePayer = sender.publicKey;
-        const signature = await connection.sendTransaction(tx, [sender]);
-
-        return {
-          action: 'send',
-          token: 'SOL',
-          amount,
-          recipient,
-          signature,
-          explorer: `https://explorer.solana.com/tx/${signature}?cluster=mainnet`,
-        };
-      } else {
-        console.log(`🪙 Sending ${amount} ${fromToken} to ${recipient}`);
-        await spltokentransfer(senderKeyBase58, recipient, tokenAddress, amount);
-
-        return {
-          action: 'send',
-          token: fromToken,
-          amount,
-          recipient,
-          message: 'SPL token transfer submitted',
-        };
-      }
-    } else {
-      throw new Error('Could not determine action (send/swap) from tweet keywords');
-    }
-  } catch (err) {
-    console.error('❌ executeAction failed:', err);
-    return { error: err.message };
+  if (!tweet_link_extra) {
+    console.error("❌ executeAction FATAL: tweet_link_extra is missing.", { content });
+    return { error: 'Missing tweet_link_extra, cannot execute action.', status: 'failed', tweet_content: content };
   }
 
-}
-
-// === Semantic Search with Action Execution ===
-app.get('/todoactivity', async (req, res) => {
-  // Hardcoded query keywords
-  const query = 'swap,send,buy,send,transfer';
+  console.log(`🎬 Attempting action for tweet: ${tweet_link_extra} - Content: "${content ? String(content).substring(0,70) : 'N/A'}..."`);
 
   try {
-    // Fetch and analyze tweets
-    const results = await searchTweets(query);
+    const keywordsLower = (keywords || []).map(k => String(k).toLowerCase());
+    const isSwap = keywordsLower.includes('swap');
+    const isTransfer = keywordsLower.some(k => ['send', 'transfer'].includes(k));
+    let actionResultPayload;
 
-    const formatted = results.map(tweet => ({
-      content: tweet.content,
-      user_name: tweet.user_name,
-      tweet_id: tweet.tweet_id,
-      tweet_link: tweet.tweet_link,
-      tweet_link_extra: tweet.tweet_link_extra || null,
+    const currentSymbols = (symbols || []).map(s => String(s));
+    const currentContracts = (contracts || []).map(c => String(c)).filter(isValidSolanaAddress); 
+    const currentTokenAmounts = (tokenAmounts || []).map(ta => parseFloat(String(ta))).filter(n => !isNaN(n) && n > 0);
+    let primaryAmount = currentTokenAmounts.length > 0 ? currentTokenAmounts[0] : null;
+
+    if (isSwap) {
+      console.log(`🔍 Swap intent detected. Keywords: [${keywordsLower.join(', ')}], Symbols: [${currentSymbols.join(', ')}], Contracts: [${currentContracts.join(', ')}], Amounts: [${currentTokenAmounts.join(', ')}]`);
+      let fromTokenAddress, toTokenAddress, amountForSwap, fromTokenSymbol, toTokenSymbol; 
+      const hasSolKeyword = keywordsLower.some(k => k === 'sol' || k === '$sol' || k === 'solana');
+      const hasForKeyword = keywordsLower.includes('for');
+
+      // --- Priority 0: Specific "Swap [Amount] SOL for [TokenX]" or "Swap [TokenX] for [Amount] SOL" ---
+      if (hasSolKeyword && hasForKeyword && primaryAmount) { // primaryAmount MUST be present for this pattern
+        let targetTokenX_Identifier = null; 
+
+        if (currentContracts.length === 1 && resolveTokenAddress(currentContracts[0]) !== TOKEN_ADDRESSES.SOL) {
+          targetTokenX_Identifier = currentContracts[0];
+        } else if (currentSymbols.length > 0) {
+          const potentialTargetSymbol = currentSymbols.find(s => {
+            const resolvedAddress = resolveTokenAddress(s);
+            return resolvedAddress && resolvedAddress !== TOKEN_ADDRESSES.SOL;
+          });
+          if (potentialTargetSymbol) {
+            targetTokenX_Identifier = potentialTargetSymbol;
+          }
+        }
+        if (!targetTokenX_Identifier && currentContracts.length === 1 && currentContracts[0] !== TOKEN_ADDRESSES.SOL) {
+            targetTokenX_Identifier = currentContracts[0];
+        }
+
+        if (targetTokenX_Identifier) {
+          console.log(`♟️ Pattern 0: Specific SOL Swap. Target (TokenX): ${targetTokenX_Identifier}, SOL Amount: ${primaryAmount}`);
+          fromTokenSymbol = 'SOL'; 
+          fromTokenAddress = TOKEN_ADDRESSES.SOL;
+          toTokenSymbol = targetTokenX_Identifier; 
+          toTokenAddress = resolveTokenAddress(targetTokenX_Identifier); 
+          amountForSwap = primaryAmount; // Use the explicitly found primaryAmount for SOL
+
+          if (!toTokenAddress) throw new Error(`P0: Invalid target token for SOL swap: '${targetTokenX_Identifier}' could not be resolved.`);
+          if (toTokenAddress === fromTokenAddress) throw new Error("P0: Target token for SOL swap cannot be SOL itself.");
+
+          console.log(`🔄 Executing SWAP (P0: SOL for TokenX): ${amountForSwap} ${fromTokenSymbol} (${fromTokenAddress}) → ${toTokenSymbol} (${toTokenAddress})`);
+          const txid = await swap({ fromToken: fromTokenAddress, toToken: toTokenAddress, amount: amountForSwap, userPublicKey: sender.publicKey.toBase58(), slippageBps: DEFAULT_SLIPPAGE_BPS });
+          actionResultPayload = { action: 'swap_sol_for_tokenX', fromSymbol: fromTokenSymbol, toSymbol: toTokenSymbol, fromAddress: fromTokenAddress, toAddress: toTokenAddress, amount: amountForSwap, txid, explorer: `https://solscan.io/tx/${txid}` };
+        }
+      }
+
+      // --- Priority 1: Two Symbols Present (and not the specific SOL swap above) ---
+      if (!actionResultPayload && currentSymbols.length >= 2) {
+        if (!primaryAmount) throw new Error("P1: Amount not specified for two-symbol swap."); // Require amount
+        console.log(`♟️ Pattern 1: Two Symbols. Symbols: [${currentSymbols[0]}, ${currentSymbols[1]}]`);
+        fromTokenSymbol = currentSymbols[0]; 
+        toTokenSymbol = currentSymbols[1];   
+        fromTokenAddress = resolveTokenAddress(fromTokenSymbol);
+        toTokenAddress = resolveTokenAddress(toTokenSymbol);
+        amountForSwap = primaryAmount; // Use the explicitly found primaryAmount
+
+        if (!fromTokenAddress) throw new Error(`P1: Invalid 'from' token for Two-Symbol swap: '${fromTokenSymbol}' could not be resolved.`);
+        if (!toTokenAddress) throw new Error(`P1: Invalid 'to' token for Two-Symbol swap: '${toTokenSymbol}' could not be resolved.`);
+        if (fromTokenAddress === toTokenAddress) throw new Error("P1: Two-Symbol swap: From and To tokens are the same.");
+
+        console.log(`🔄 Executing SWAP (P1: Two Symbols): ${amountForSwap} ${fromTokenSymbol} (${fromTokenAddress}) → ${toTokenSymbol} (${toTokenAddress})`);
+        const txid = await swap({ fromToken: fromTokenAddress, toToken: toTokenAddress, amount: amountForSwap, userPublicKey: sender.publicKey.toBase58(), slippageBps: DEFAULT_SLIPPAGE_BPS });
+        actionResultPayload = { action: 'swap_two_symbols', fromSymbol: fromTokenSymbol, toSymbol: toTokenSymbol, fromAddress: fromTokenAddress, toAddress: toTokenAddress, amount: amountForSwap, txid, explorer: `https://solscan.io/tx/${txid}` };
+      }
+      // --- Priority 2: Two Contract Addresses Present (and not caught by P0 or P1) ---
+      else if (!actionResultPayload && currentContracts.length >= 2) {
+        if (!primaryAmount) throw new Error("P2: Amount not specified for two-contract swap."); // Require amount
+        console.log(`♟️ Pattern 2: Two Contracts. C1: ${currentContracts[0]}, C2: ${currentContracts[1]}`);
+        fromTokenAddress = currentContracts[0]; 
+        toTokenAddress = currentContracts[1];   
+        fromTokenSymbol = currentContracts[0]; 
+        toTokenSymbol = currentContracts[1];   
+        amountForSwap = primaryAmount; // Use the explicitly found primaryAmount
+
+        if (fromTokenAddress === toTokenAddress) throw new Error("P2: Two-Contract swap: From and To tokens are the same.");
+
+        console.log(`🔄 Executing SWAP (P2: Two Contracts): ${amountForSwap} of ${fromTokenAddress} → ${toTokenAddress}`);
+        const txid = await swap({ fromToken: fromTokenAddress, toToken: toTokenAddress, amount: amountForSwap, userPublicKey: sender.publicKey.toBase58(), slippageBps: DEFAULT_SLIPPAGE_BPS });
+        actionResultPayload = { action: 'swap_two_contracts', fromSymbol: fromTokenSymbol, toSymbol: toTokenSymbol, fromAddress: fromTokenAddress, toAddress: toTokenAddress, amount: amountForSwap, txid, explorer: `https://solscan.io/tx/${txid}` };
+      }
+      // --- Priority 3: One Symbol (non-SOL) or One Contract (implying SOL to Token, and not caught by P0) ---
+      else if (!actionResultPayload &&
+               ((currentSymbols.length === 1 && resolveTokenAddress(currentSymbols[0]) !== TOKEN_ADDRESSES.SOL) ||
+                (currentContracts.length === 1 && currentContracts[0] !== TOKEN_ADDRESSES.SOL))) {
+        
+        if (!primaryAmount) throw new Error("P3: Amount not specified for SOL to single target swap."); // Require amount
+        let targetIdentifier;
+        if (currentSymbols.length === 1 && resolveTokenAddress(currentSymbols[0]) !== TOKEN_ADDRESSES.SOL) {
+            targetIdentifier = currentSymbols[0];
+        } else if (currentContracts.length === 1 && currentContracts[0] !== TOKEN_ADDRESSES.SOL) {
+            targetIdentifier = currentContracts[0];
+        } else {
+             throw new Error("P3: Ambiguous single target for SOL swap.");
+        }
+
+        console.log(`♟️ Pattern 3: SOL to Single Target. Target: ${targetIdentifier}`);
+        
+        fromTokenAddress = TOKEN_ADDRESSES.SOL;
+        fromTokenSymbol = 'SOL'; 
+        toTokenAddress = resolveTokenAddress(targetIdentifier); 
+        toTokenSymbol = targetIdentifier; 
+        amountForSwap = primaryAmount; // Use the explicitly found primaryAmount (interpreted as SOL amount here)
+
+        if (!toTokenAddress) throw new Error(`P3: Invalid target token for SOL to Single Target swap: '${targetIdentifier}' could not be resolved.`);
+        if (fromTokenAddress === toTokenAddress) throw new Error("P3: SOL to Single Target swap: Target token is SOL itself.");
+        
+        console.log(`🔄 Executing SWAP (P3: SOL to Single Target): ${amountForSwap} SOL → ${toTokenSymbol} (${toTokenAddress})`);
+        const txid = await swap({ fromToken: fromTokenAddress, toToken: toTokenAddress, amount: amountForSwap, userPublicKey: sender.publicKey.toBase58(), slippageBps: DEFAULT_SLIPPAGE_BPS });
+        actionResultPayload = { action: 'swap_sol_to_single_target', fromSymbol: fromTokenSymbol, toSymbol: toTokenSymbol, fromAddress: fromTokenAddress, toAddress: toTokenAddress, amount: amountForSwap, txid, explorer: `https://solscan.io/tx/${txid}` };
+      }
+
+      if (!actionResultPayload) {
+        let reason = `Swap conditions not met after all checks. Symbols: [${currentSymbols.join(',')}], Contracts: [${currentContracts.join(',')}], SOL Keyword: ${hasSolKeyword}, For Keyword: ${hasForKeyword}, Amount: ${primaryAmount}.`;
+        throw new Error(`Ambiguous swap request or insufficient data. ${reason}`);
+      }
+
+    } else if (isTransfer) {
+      const recipient = currentContracts[0];
+      if (!recipient) throw new Error("Transfer failed: Recipient address missing or invalid.");
+      
+      if (!primaryAmount) throw new Error("Transfer failed: Amount not specified."); // Require amount for transfers too
+      let amountForTransfer = primaryAmount;
+      let tokenToTransferSymbol = 'SOL'; 
+
+      if (currentSymbols.length > 0 && resolveTokenAddress(currentSymbols[0]) !== TOKEN_ADDRESSES.SOL) { 
+          tokenToTransferSymbol = currentSymbols[0];
+      }
+
+      if (tokenToTransferSymbol.toUpperCase() === 'SOL' || resolveTokenAddress(tokenToTransferSymbol) === TOKEN_ADDRESSES.SOL) {
+        console.log(`💸 Executing SOL TRANSFER: ${amountForTransfer} SOL → ${recipient}`);
+        const toPublicKey = new PublicKey(recipient);
+        const lamports = amountForTransfer * LAMPORTS_PER_SOL;
+        const senderBalance = await connection.getBalance(sender.publicKey);
+        if (senderBalance < lamports + 5000) {
+          throw new Error(`Insufficient SOL for transfer: ${amountForTransfer} SOL.`);
+        }
+        const transaction = new Transaction().add(SystemProgram.transfer({ fromPubkey: sender.publicKey, toPubkey: toPublicKey, lamports }));
+        const signature = await sendAndConfirmTransaction(connection, transaction, [sender]);
+        actionResultPayload = { action: 'transfer_sol', tokenSymbol: 'SOL', amount: amountForTransfer, recipient, signature, explorer: `https://explorer.solana.com/tx/${signature}?cluster=mainnet-beta` };
+      } else {
+        const tokenAddressToTransfer = resolveTokenAddress(tokenToTransferSymbol);
+        if (!tokenAddressToTransfer) throw new Error(`Invalid SPL token for transfer: '${tokenToTransferSymbol}' could not be resolved.`);
+
+        console.log(`💸 Executing SPL TOKEN TRANSFER: ${amountForTransfer} ${tokenToTransferSymbol}(${tokenAddressToTransfer}) → ${recipient}`);
+        const splResult = await spltokentransfer(senderKeyBase58, recipient, tokenAddressToTransfer, amountForTransfer);
+        actionResultPayload = { action: 'transfer_spl_token', tokenSymbol: tokenToTransferSymbol, tokenAddress: tokenAddressToTransfer, amount: amountForTransfer, recipient, details: splResult, message: 'SPL Token transfer initiated.' };
+      }
+    } else {
+      throw new Error('Could not determine valid action (swap/transfer) from tweet keywords.');
+    }
+
+    if (!actionResultPayload) {
+        throw new Error("Internal error: Action payload not generated after processing.");
+    }
+
+    const dbUpdateSuccess = await updateTweetActionStatus(tweet_link_extra);
+    actionResultPayload.dbStatus = dbUpdateSuccess ? "updated_successfully" : "update_failed";
+    
+    console.log(`✅ Action successful for ${tweet_link_extra}. DB Status: ${actionResultPayload.dbStatus}`);
+    return { ...actionResultPayload, status: 'success', tweet_content: content, tweet_link_extra };
+
+  } catch (error) {
+    console.error(`❌ Action execution FAILED for tweet ${tweet_link_extra}: ${error.message}`);
+    return { error: error.message, status: 'failed', tweet_content: content, tweet_link_extra, stack: error.stack };
+  }
+}
+
+// === Main Tweet Processing Route: /todoactivity ===
+app.get('/todoactivity', async (req, res) => {
+  const queryKeywords = 'swap,send,buy,transfer,airdrop';
+
+  try {
+    console.log(`\n🔄 [${new Date().toISOString()}] Starting /todoactivity cycle...`);
+    console.log("1. Fetching tweets from scrapper with keywords:", queryKeywords);
+    const rawTweets = await searchTweets(queryKeywords);
+
+    if (!rawTweets || rawTweets.length === 0) {
+      console.log("🔵 No tweets found from scrapper in this cycle.");
+      return res.json({ message: "No new tweets found from scrapper.", processed_count: 0, actions: [] });
+    }
+    console.log(`📰 Found ${rawTweets.length} raw tweets from scrapper.`);
+    
+    const tweetLinksToCheck = rawTweets.map(tweet => tweet.tweet_link_extra).filter(link => !!link);
+    if (tweetLinksToCheck.length === 0) {
+      console.log("🔵 None of the raw tweets had 'tweet_link_extra'. Cannot check DB status.");
+      return res.json({ message: "No tweets with 'tweet_link_extra' found to process.", processed_count: 0, actions: [] });
+    }
+
+    console.log(`2. Checking DB status for ${tweetLinksToCheck.length} tweet links...`);
+    const dbQuery = `SELECT tweet_link_extra FROM tweets1 WHERE tweet_link_extra = ANY($1::text[]) AND action_perform = TRUE`;
+    const dbResult = await pool.query(dbQuery, [tweetLinksToCheck]);
+    
+    const alreadyPerformedLinks = new Set(dbResult.rows.map(row => row.tweet_link_extra));
+    console.log(`ℹ️ ${alreadyPerformedLinks.size} tweets are already marked as action_perform=TRUE.`);
+
+    const actionableTweets = rawTweets.filter(tweet => tweet.tweet_link_extra && !alreadyPerformedLinks.has(tweet.tweet_link_extra));
+
+    if (actionableTweets.length === 0) {
+      console.log("✅ All fetched tweets have already been processed or lacked 'tweet_link_extra'.");
+      return res.json({ message: "No new actionable tweets requiring processing.", processed_count: 0, actions: [] });
+    }
+    console.log(`3. Found ${actionableTweets.length} new actionable tweets to process.`);
+
+    const formattedTweets = actionableTweets.map(tweet => ({
+      content: String(tweet.content || ""), 
+      user_name: String(tweet.user_name || "UnknownUser"),
+      tweet_id: String(tweet.tweet_id || "UnknownID"),
+      tweet_link: String(tweet.tweet_link || ""),
+      tweet_link_extra: String(tweet.tweet_link_extra || ""),
       created_at: tweet.created_at,
       distance: tweet._additional?.distance,
-      extracted: {
-        contracts: tweet.extracted.contracts || [],
-        tokenAmounts: tweet.extracted.tokenAmounts || [],
-        keywords: tweet.extracted.keywords || [],
-        symbols: tweet.extracted.symbols || [],
-      },
+      contracts: (tweet.extracted?.contracts || []).map(c => String(c)),
+      tokenAmounts: (tweet.extracted?.tokenAmounts || []).map(ta => String(ta)),
+      keywords: (tweet.extracted?.keywords || []).map(k => String(k)),
+      symbols: (tweet.extracted?.symbols || []).map(s => String(s)),
     }));
 
-    // Process and filter formatted tweets that have contracts or relevant data
-    const extractedData = processExtractedData(formatted);
+    console.log("4. Filtering and structuring data for action execution (using processExtractedData)...");
+    const extractedData = processExtractedData(formattedTweets);
     
-    // Execute actions for each valid data point
-    const actionsExecuted = await Promise.all(
-      extractedData.map(async (item) => {
-        // Skip items without enough data
-        if (!item.keywords || item.keywords.length === 0) {
-          return {
-            original: item,
-            status: 'skipped',
-            reason: 'No keywords found'
-          };
-        }
-        
-        try {
-          const result = await executeAction(item);
-          return {
-            original: item,
-            result,
-            status: result.error ? 'failed' : 'success'
-          };
-        } catch (err) {
-          return {
-            original: item,
-            status: 'failed',
-            error: err.message
-          };
-        }
-      })
-    );
+    if (extractedData.length === 0) {
+      console.log("🔵 No tweets passed the 'processExtractedData' filter.");
+      return res.json({ message: "No tweets met criteria for action after internal filtering.", processed_count: 0, actions: [] });
+    }
+    console.log(`🛠️ ${extractedData.length} tweets structured for potential action.`);
 
-    res.json({ 
-      results: extractedData,
-      actions: actionsExecuted
+    console.log("5. Executing actions one by one...");
+    const actionsExecutedResults = [];
+    for (const item of extractedData) { 
+        console.log(`--- Processing item for tweet: ${item.tweet_link_extra} ---`);
+        try {
+            const result = await executeAction(item);
+            actionsExecutedResults.push(result); 
+        } catch (execError) {
+            console.error(`🚨 CRITICAL error during executeAction call for ${item.tweet_link_extra}: ${execError.message}`);
+            actionsExecutedResults.push({ original_tweet_content: item.content, tweet_link_extra: item.tweet_link_extra, status: 'failed', error: `Outer exec error: ${execError.message}`, stack: execError.stack });
+        }
+    }
+    
+    console.log("✅ /todoactivity cycle finished.");
+    res.json({
+      message: `Processed ${extractedData.length} potential actions. See 'actions' array for details.`,
+      processed_count: extractedData.length,
+      actions: actionsExecutedResults,
     });
+
   } catch (err) {
-    console.error('Search or action execution error:', err);
-    res.status(500).json({ error: 'Operation failed', details: err.message });
+    console.error('🚨 FATAL ERROR in /todoactivity route:', err);
+    res.status(500).json({ error: 'Overall operation failed in /todoactivity', details: err.message, stack: err.stack });
   }
 });
 
-// 🔍 Filtering and processing logic
-function processExtractedData(data) {
-  return data
+function processExtractedData(formattedTweets) {
+  return formattedTweets
     .map(item => ({
       tweet_link_extra: item.tweet_link_extra,
       content: item.content,
-      contracts: item.extracted.contracts,
-      tokenAmounts: item.extracted.tokenAmounts,
-      keywords: item.extracted.keywords,
-      symbols: item.extracted.symbols,
+      contracts: item.contracts || [],
+      tokenAmounts: item.tokenAmounts || [],
+      keywords: item.keywords || [],
+      symbols: item.symbols || [],
     }))
     .filter(item => {
-      // Keep items with contracts (addresses)
-      if (item.contracts && item.contracts.length > 0) return true;
-      
-      // Keep items with both symbols and amounts for swaps
-      if (item.symbols && item.symbols.length > 0 && 
-          item.tokenAmounts && item.tokenAmounts.length > 0) return true;
-      
-      // Otherwise filter out
+      if (!item.tweet_link_extra) {
+        console.warn("Filtering out item in processExtractedData: missing tweet_link_extra. Content:", String(item.content).substring(0,50));
+        return false;
+      }
+      const hasActionKeyword = item.keywords && item.keywords.some(k => ['swap', 'send', 'transfer'].includes(String(k).toLowerCase()));
+      const hasSwapIndicators = item.symbols && item.symbols.length > 0 && item.tokenAmounts && item.tokenAmounts.length > 0; // Crucial: require amounts for swaps
+      const hasContractInfo = item.contracts && item.contracts.length > 0;
+      const hasTransferInfo = item.tokenAmounts && item.tokenAmounts.length > 0 && item.contracts && item.contracts.length > 0;
+
+
+      if (hasActionKeyword && (hasSwapIndicators || hasContractInfo || hasTransferInfo)) { // Ensure some data exists for the action
+        return true;
+      }
       return false;
     });
 }
 
+// --- Server Start ---
 app.listen(PORT, () => {
-  console.log(`🚀 API listening at http://localhost:${PORT}`);
-  console.log(`💱 Available token mappings: ${Object.keys(TOKEN_ADDRESSES).join(', ')}`);
+  console.log(`🚀 API server listening at http://localhost:${PORT}`);
+  console.log("🔑 Sender Wallet Public Key:", sender.publicKey.toBase58());
 });

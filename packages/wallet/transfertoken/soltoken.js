@@ -10,7 +10,8 @@ const {
     createTransferInstruction
 } = require('@solana/spl-token');
 const bs58 = require('bs58');
-
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 /**
  * Transfers tokens on the Solana blockchain.
  * @param {string} base58PrivateKey - The private key in base58 format.
@@ -22,7 +23,7 @@ async function spltokentransfer(base58PrivateKey, destinationWallet, mintAddress
     const secretKey = bs58.decode(base58PrivateKey);
     const FROM_KEYPAIR = Keypair.fromSecretKey(secretKey);
 
-    const QUICKNODE_RPC = '';
+    const QUICKNODE_RPC =  process.env.SOLANA_RPC_URL;
     const SOLANA_CONNECTION = new Connection(QUICKNODE_RPC, 'confirmed');
 
     async function getNumberDecimals(mintAddress) {
