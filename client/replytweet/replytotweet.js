@@ -1,11 +1,7 @@
-require('dotenv').config();
 const path = require('path');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const login = require('../../twitter-scrapper/agent/login');
-require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
-const fs = require('fs');
-
 puppeteer.use(StealthPlugin());
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -51,7 +47,7 @@ async function attemptReply(page, replyText) {
 
 async function replyToTweet(tweetId, replyMessage) {
     const browser = await puppeteer.launch({
-        headless: false,
+        headless: 'new',
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
@@ -94,5 +90,6 @@ async function replyToTweet(tweetId, replyMessage) {
         await browser.close();
     }
 }
+
 
 module.exports = replyToTweet;

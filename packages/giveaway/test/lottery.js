@@ -85,5 +85,8 @@ async function drawAllGiveaways() {
   }
 }
 
+// now after the lottery gather the address and the solana amount and then trigger the 
+// send token function, after that use the tweet-api-adapter/replywithscrapper to sent the confirmation
+// stating that the giveway has been process and you're the winner and
 // Call the function to draw all available giveaways
 drawAllGiveaways();

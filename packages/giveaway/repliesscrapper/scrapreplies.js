@@ -1,7 +1,7 @@
 // scrapeReplies-tweetBodyOnly.js
 const puppeteer = require('puppeteer');
 
-const TWEET_URL = 'https://nitter.net/Elisabethxbt/status/1917477216256155833';
+const TWEET_URL = 'https://nitter.net/Elisabethxbt/status/1920760298958364787';
 
 async function scrapeTweetBodies(url) {
   const browser = await puppeteer.launch({ headless: false }); // visible browser for debug

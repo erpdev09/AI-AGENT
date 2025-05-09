@@ -84,16 +84,15 @@ CREATE TABLE participants (
 
 
 CREATE TABLE
-my_new_database=> CREATE TABLE "public"."giveaway" (
-    "giveaway_id" BIGSERIAL PRIMARY KEY,
+CREATE TABLE "public"."giveaway" (
+    "giveaway_id" BIGINT PRIMARY KEY,       -- Now stores the actual tweet_id and is the PK
     "is_create_giveaway" BOOLEAN NOT NULL,
     "participant_count" INTEGER,
     "amount" NUMERIC(18,8),
     "token_type" TEXT,
     "deadline" TIMESTAMP,
-    "tweet_id" BIGINT NOT NULL,
+    -- NO separate "tweet_id" column here
     "created_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    "action_performed" BOOLEAN DEFAULT false,
-    UNIQUE(tweet_id)
+    "action_performed" BOOLEAN DEFAULT false
 );

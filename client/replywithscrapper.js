@@ -1,5 +1,5 @@
 /* 
-This is just a example to test for reply with puppteer
+This is just a example not used in prod
 */
 require('dotenv').config();
 const path = require('path');

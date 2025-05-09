@@ -7,7 +7,6 @@ function extractGiveawayDetails(tweetContent) {
   const isCreateGiveaway = /create a (giveaway|gw|campaign|contest|prize|draw)/i.test(tweetContent);
   let participantCount;
 
-  // Updated primary regex to include singular forms like 'user', 'member', 'winner', 'participant', 'guy'
   const participantKeywords = '(people|peep|guy|guys|user|users|participant|participants|member|members|winner|winners)';
   const participantMatch = tweetContent.match(
     new RegExp(`(?:for|draw|select|choose|pick)\\s*(\\d+)\\s*${participantKeywords}`, 'i')
@@ -23,7 +22,6 @@ function extractGiveawayDetails(tweetContent) {
     const amountMatchFromTweet = tweetContent.match(amountTokenRegex);
     const extractedAmountStr = amountMatchFromTweet ? amountMatchFromTweet[1] : null;
 
-    // Updated fallback regex keywords
     const generalParticipantKeywords = '(people|peep|guy|guys|user|users|participant|participants|member|members)';
     const generalParticipantContextMatch = tweetContent.match(
         new RegExp(`(\\d+)\\s*${generalParticipantKeywords}`, 'i')
@@ -39,32 +37,19 @@ function extractGiveawayDetails(tweetContent) {
     if (!participantCount && numbersFromNlp.length > 0) {
         for (const num of numbersFromNlp) {
             if (String(num) !== extractedAmountStr) {
-                // Check if this number is immediately followed by a (singular/plural) participant keyword
-                // This helps if the number is not caught by the more specific regexes above but is contextually a participant count
                 const checkContextRegex = new RegExp(`${num}\\s*${generalParticipantKeywords}`, 'i');
                 if (checkContextRegex.test(tweetContent)) {
                     participantCount = num;
                     break;
                 }
-                // If no direct keyword context, but it's a number not the amount,
-                // and not already assigned, this is a more general fallback.
-                if (!participantCount) { // Check if participantCount is still not set
-                    participantCount = num; // Assign it, but it might be overwritten if a better context is found later in the loop
-                                        // or prefer the one with keyword context.
-                    // We break here assuming the first non-amount number is the participant count if no other context is found.
-                    // This can be risky if there are other numbers (e.g. "giveaway for 2 users, id 7, prize 0.1 sol")
-                    // The regexes above are better. This loop is a last resort.
+                if (!participantCount) {
+                    participantCount = num;
                     break;
                 }
             }
         }
-        //This specific condition after loop was a bit problematic, simplified above
-        // if (participantCount && String(participantCount) === extractedAmountStr && !generalParticipantContextMatch) {
-        //      participantCount = undefined; // Reset if it was mistakenly set to the amount without context
-        // }
     }
 
-    // Final fallback regex, also updated
     if (!participantCount) {
       const fallbackMatch = tweetContent.match( new RegExp(`(\\d+)\\s*${generalParticipantKeywords}`, 'i'));
       if (fallbackMatch && fallbackMatch[1]) {
@@ -92,44 +77,63 @@ function extractGiveawayDetails(tweetContent) {
   return { isCreateGiveaway, participantCount, amount, tokenType, deadline };
 }
 
-// --- The rest of your script (insertGiveawayData, runGiveawaySearch, etc.) remains the same ---
-// Make sure to include them if you're replacing the whole file. For brevity, I'm only showing the changed function.
-
 /**
- * Inserts giveaway data into PostgreSQL
- * @param {Object} giveawayDetails
+ * Inserts giveaway data into PostgreSQL, using actualTweetId as the giveaway_id (Primary Key).
+ * ASSUMES 'giveaway_id' in the DB is BIGINT PRIMARY KEY and not BIGSERIAL.
+ * ASSUMES the separate 'tweet_id' column has been removed from the DB table.
+ * @param {Object} giveawayDetails - Extracted details { isCreateGiveaway, participantCount, amount, tokenType, deadline }
+ * @param {string | number} actualTweetId - The ID from the tweet data (e.g., result.tweet_id), to be used as giveaway_id.
  */
-async function insertGiveawayData(giveawayDetails) {
-  const { isCreateGiveaway, participantCount, amount, tokenType, deadline, tweetId } = giveawayDetails;
+async function insertGiveawayData(giveawayDetails, actualTweetId) {
+  const { isCreateGiveaway, participantCount, amount, tokenType, deadline } = giveawayDetails;
 
+  // 'giveaway_id' is now the first column and will take 'actualTweetId'.
+  // 'created_at', 'updated_at', 'action_performed' have defaults in the DB.
   const query = `
-    INSERT INTO giveaway (is_create_giveaway, participant_count, amount, token_type, deadline, tweet_id)
+    INSERT INTO giveaway (
+        giveaway_id,      -- This will be the actualTweetId
+        is_create_giveaway,
+        participant_count,
+        amount,
+        token_type,
+        deadline
+    )
     VALUES ($1, $2, $3, $4, $5, $6)
-    RETURNING giveaway_id;
+    ON CONFLICT (giveaway_id) DO NOTHING -- giveaway_id is the PK and stores the tweet_id
+    RETURNING giveaway_id;              -- This will return the actualTweetId if inserted
   `;
 
   const values = [
+    actualTweetId,    // Value for giveaway_id (which is the tweet_id)
     isCreateGiveaway,
     participantCount,
     amount,
     tokenType,
-    deadline,
-    tweetId
+    deadline
   ];
 
   try {
     const res = await pool.query(query, values);
-    console.log(`✅ Giveaway stored with ID: ${res.rows[0].giveaway_id}`);
-    return res.rows[0].giveaway_id;
+    if (res.rows.length > 0) {
+      // The returned giveaway_id will be the actualTweetId
+      console.log(`✅ Giveaway stored. Giveaway ID (Tweet ID): ${res.rows[0].giveaway_id}`);
+      return res.rows[0].giveaway_id;
+    } else {
+      // This block is hit if ON CONFLICT (giveaway_id) DO NOTHING was triggered
+      console.log(`ℹ️ Giveaway with ID (Tweet ID) ${actualTweetId} already exists.`);
+      return actualTweetId; // Return the existing ID
+    }
   } catch (err) {
-    console.error('❌ Error inserting giveaway data:', err);
+    console.error(`❌ Error inserting giveaway data for ID (Tweet ID) ${actualTweetId}:`, err);
+    // If ON CONFLICT is not working as expected or another error occurs
+    if (err.code === '23505') { // unique_violation (should be caught by ON CONFLICT)
+        console.warn(`⚠️ Unique constraint violation for Giveaway ID (Tweet ID) ${actualTweetId}. This should have been handled by ON CONFLICT.`);
+        return actualTweetId; // Indicate it exists
+    }
     throw err;
   }
 }
 
-/**
- * Main function to search tweets, extract giveaway info, and store them
- */
 async function runGiveawaySearch() {
   try {
     const results = await syncGiveaways();
@@ -137,7 +141,10 @@ async function runGiveawaySearch() {
     console.log('🔍 Giveaway Search Results:');
     if (results && results.length > 0) {
       const validGiveaways = results.filter(result => {
-        if (!result || !result.content) return false;
+        if (!result || !result.content || !result.tweet_id) {
+            console.warn('⚠️ Skipping a result due to missing content or tweet_id:', result);
+            return false;
+        }
         const giveawayDetails = extractGiveawayDetails(result.content);
         return giveawayDetails.isCreateGiveaway;
       });
@@ -145,61 +152,63 @@ async function runGiveawaySearch() {
       if (validGiveaways.length > 0) {
         for (let index = 0; index < validGiveaways.length; index++) {
           const result = validGiveaways[index];
-          console.log(`Result ${index + 1}:`);
-          console.log(`  Tweet ID: ${result.tweet_id}`);
+          console.log(`\nProcessing Tweet ${index + 1}:`);
+          // result.tweet_id is the value that will become the 'giveaway_id' in the table.
+          console.log(`  Tweet ID (to be used as Giveaway ID): ${result.tweet_id}`);
           console.log(`  User Name: ${result.user_name}`);
           console.log(`  Content: ${result.content}`);
 
           const giveawayDetails = extractGiveawayDetails(result.content);
-          console.log(`  Giveaway Details:`);
-          console.log(`    Valid Giveaway: ${giveawayDetails.isCreateGiveaway}`);
-          console.log(`    Participants: ${giveawayDetails.participantCount !== undefined ? giveawayDetails.participantCount : 'Unknown'}`); // Check for undefined explicitly
+          console.log(`  Extracted Giveaway Details:`);
+          console.log(`    Is Giveaway: ${giveawayDetails.isCreateGiveaway}`);
+          console.log(`    Participants: ${giveawayDetails.participantCount !== undefined ? giveawayDetails.participantCount : 'Unknown'}`);
           console.log(`    Amount: ${giveawayDetails.amount !== undefined ? `${giveawayDetails.amount} ${giveawayDetails.tokenType}` : 'Unknown'}`);
-          console.log(`    Token Type: ${giveawayDetails.tokenType || 'Unknown'}`);
+          console.log(`    Token Type: ${giveawayDetails.tokenType || 'Default (SOL) or Unknown'}`);
           console.log(`    Deadline: ${giveawayDetails.deadline ? giveawayDetails.deadline.toLocaleString() : 'Not specified'}`);
 
           const tweetLink = `https://x.com/${result.user_name}/status/${result.tweet_id}`;
           console.log(`  Tweet Link: ${tweetLink}`);
-          console.log(`  Created At: ${result.created_at}`);
+          console.log(`  Tweet Created At: ${result.created_at}`);
           console.log('-----------------------------');
 
-          await insertGiveawayData({
-            isCreateGiveaway: giveawayDetails.isCreateGiveaway,
-            participantCount: giveawayDetails.participantCount,
-            amount: giveawayDetails.amount,
-            tokenType: giveawayDetails.tokenType,
-            deadline: giveawayDetails.deadline,
-            tweetId: result.tweet_id
-          });
+          // The 'result.tweet_id' is passed as 'actualTweetId'
+          // and will be inserted into the 'giveaway_id' column (which is PK)
+          await insertGiveawayData(giveawayDetails, result.tweet_id);
         }
+        console.log('\n✅ All valid giveaways processed.');
       } else {
-        console.log('⚠️ No valid giveaway tweets found.');
+        console.log('⚠️ No valid giveaway tweets found in the fetched results.');
       }
     } else {
-      console.log('📭 No giveaway tweets found or an issue with fetching results.');
+      console.log('📭 No tweets found by syncGiveaways or an issue occurred during fetching.');
     }
   } catch (error) {
-    console.error('❌ Error running the giveaway search:', error);
+    console.error('❌ Error running the giveaway search process:', error);
   }
 }
 
-/**
- * Processes a single tweet and extracts giveaway details
- * @param {Object} tweet - Tweet object with `content` field
- * @returns {Object}
- */
 function processTweet(tweet) {
-  return extractGiveawayDetails(tweet.content);
+  const details = extractGiveawayDetails(tweet.content);
+  return {
+      ...details,
+      tweet_id: tweet.tweet_id
+  };
 }
 
-// Export for use in other modules
 module.exports = {
   runGiveawaySearch,
   extractGiveawayDetails,
-  processTweet
+  processTweet,
+  insertGiveawayData
 };
 
-// Run script directly if not imported
 if (require.main === module) {
-  runGiveawaySearch();
+  runGiveawaySearch().then(() => {
+        console.log("Giveaway search script finished.");
+        pool.end().then(() => console.log("Database pool closed."));
+    }).catch(err => {
+        console.error("Critical error in script execution:", err);
+        pool.end().then(() => console.log("Database pool closed after error."));
+        process.exit(1);
+    });
 }

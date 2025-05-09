@@ -8,7 +8,7 @@ packages/twitter-api-adapter
 */
 const { postTweet } = require('../packages/twitter-api-adapter/managetweet/createtweet');
 
-postTweet('Hello world! This is my first tweet with the Twitter API v2.');
+postTweet('this is a message sent.');
 
 
 
