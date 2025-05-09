@@ -81,3 +81,19 @@ CREATE TABLE participants (
   submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT unique_participant_per_giveaway UNIQUE (giveaway_id, username)
 );
+
+
+CREATE TABLE
+my_new_database=> CREATE TABLE "public"."giveaway" (
+    "giveaway_id" BIGSERIAL PRIMARY KEY,
+    "is_create_giveaway" BOOLEAN NOT NULL,
+    "participant_count" INTEGER,
+    "amount" NUMERIC(18,8),
+    "token_type" TEXT,
+    "deadline" TIMESTAMP,
+    "tweet_id" BIGINT NOT NULL,
+    "created_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "action_performed" BOOLEAN DEFAULT false,
+    UNIQUE(tweet_id)
+);
