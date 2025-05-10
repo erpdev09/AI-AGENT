@@ -47,7 +47,7 @@ async function attemptReply(page, replyText) {
 
 async function replyToTweet(tweetId, replyMessage) {
     const browser = await puppeteer.launch({
-        headless: 'new',
+        headless: false,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
