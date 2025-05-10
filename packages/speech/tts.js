@@ -1,58 +1,35 @@
-require("dotenv").config();
-const express = require("express");
-const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
+const gTTS = require('gtts');
+const fs = require('fs');
+const path = require('path'); // Import the path module
 
-const app = express();
-const PORT = 3000;
+const textToConvert = 'hahahah testing';
+const language = 'en';
+const tempDirName = 'temp'; // Name of the temporary directory
+const outputFileName = 'processaudio.mp3'; // Desired output filename
 
-app.use(express.json()); 
+// Construct the full path to the temporary directory
+const tempDirPath = path.join(__dirname, tempDirName);
 
-const API_KEY = process.env.ELEVEN_LABS_API_KEY;
-const VOICE_ID = "pNInz6obpgDQGcFmaJgB";
+// Construct the full path to the output file
+const outputFilePath = path.join(tempDirPath, outputFileName);
 
+try {
+  // Check if the temporary directory exists, if not, create it
+  if (!fs.existsSync(tempDirPath)) {
+    fs.mkdirSync(tempDirPath, { recursive: true }); // { recursive: true } creates parent dirs if needed
+    console.log(`Created directory: ${tempDirPath}`);
+  }
 
-app.post("/tts", async (req, res) => {
-    try {
-        const { text } = req.body;
-        if (!text) {
-            return res.status(400).json({ error: "Text is required" });
-        }
+  const tts = new gTTS(textToConvert, language);
 
-        const response = await axios.post(
-            `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
-            {
-                text: text,
-                model_id: "eleven_monolingual_v1",
-                voice_settings: {
-                    stability: 0.5,
-                    similarity_boost: 0.8,
-                },
-            },
-            {
-                headers: {
-                    "Content-Type": "application/json",
-                    "xi-api-key": API_KEY,
-                },
-                responseType: "arraybuffer",
-            }
-        );
-
-        const filePath = path.join(__dirname, "output.mp3");
-        fs.writeFileSync(filePath, response.data, "binary");
-
-        res.download(filePath, "speech.mp3", () => {
-          
-            fs.unlinkSync(filePath);
-        });
-    } catch (error) {
-        console.error("Error:", error.response ? error.response.data : error.message);
-        res.status(500).json({ error: "Internal Server Error" });
+  tts.save(outputFilePath, function (err, result) {
+    if (err) {
+      console.error('Error converting text to speech:', err);
+      return;
     }
-});
+    console.log(`Text to speech converted successfully! Audio saved as ${outputFilePath}`);
+  });
 
-// Start the server
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
+} catch (error) {
+  console.error('An error occurred:', error);
+}

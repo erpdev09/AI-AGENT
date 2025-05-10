@@ -3,8 +3,8 @@ const { Connection, clusterApiUrl, Keypair, PublicKey } = require("@solana/web3.
 const { Metaplex, keypairIdentity } = require("@metaplex-foundation/js");
 
 // Configuration
-const MASTER_EDITION_MINT_ADDRESS = "7hXQTaE9ryqQkD6WEojVkjHhtLofB7godH2q9Q7ViAE"; // The address of your master edition NFT
-const RECIPIENT_ADDRESS = "Cdx7aVcisQkMPdvUfE8rmLZWKdUMwJejKqFXcyGZDkUJ"; // Optional: Address to receive the new edition (leave empty to send to yourself)
+const MASTER_EDITION_MINT_ADDRESS = ""; // The address of your master edition NFT
+const RECIPIENT_ADDRESS = ""; // Optional: Address to receive the new edition (leave empty to send to yourself)
 
 // 1. Set up your wallet and connection
 const base58PrivateKey = ""; // 🔐 Your private key here

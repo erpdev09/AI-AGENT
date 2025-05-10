@@ -75,7 +75,7 @@ const fundIrysAccount = async () => {
     console.log("📝 Metadata URI:", metadataUri);
     
     // Create Master Edition with fixed supply
-    const EDITION_SUPPLY = 10; // Total number of editions you want
+    const EDITION_SUPPLY = 5; // Total number of editions you want
     
     const { nft: masterEdition } = await metaplex.nfts().create({
       uri: metadataUri,
