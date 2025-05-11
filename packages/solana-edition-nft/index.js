@@ -5,7 +5,7 @@ const { Metaplex, keypairIdentity } = require("@metaplex-foundation/js");
 const { Uploader } = require("@irys/upload");
 const { Solana } = require("@irys/upload-solana");
 
-const base58PrivateKey = ""; // 🔐 Your private key here
+const base58PrivateKey = process.env.SOLANA_PRIVATE_KEY; // 🔐 Your private key here
 const secretKey = bs58.decode(base58PrivateKey);
 const keypair = Keypair.fromSecretKey(secretKey);
 

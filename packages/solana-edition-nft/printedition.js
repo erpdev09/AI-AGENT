@@ -7,7 +7,7 @@ const MASTER_EDITION_MINT_ADDRESS = ""; // The address of your master edition NF
 const RECIPIENT_ADDRESS = ""; // Optional: Address to receive the new edition (leave empty to send to yourself)
 
 // 1. Set up your wallet and connection
-const base58PrivateKey = ""; // 🔐 Your private key here
+const base58PrivateKey = process.env.SOLANA_PRIVATE_KEY; // 🔐 Your private key here
 const secretKey = bs58.decode(base58PrivateKey);
 const keypair = Keypair.fromSecretKey(secretKey);
 
