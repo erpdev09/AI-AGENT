@@ -543,6 +543,56 @@ function processExtractedData(formattedTweets) {
     });
 }
 
+
+app.get('/todoactivity/createtoken', async (req, res) => {
+  try {
+    const keyword = 'create a token';
+    const query = `
+      SELECT * FROM tweets1
+      WHERE LOWER(tweet_content) LIKE $1
+    `;
+    const values = [`%${keyword.toLowerCase()}%`];
+
+    const dbRes = await pool.query(query, values);
+
+    if (dbRes.rows.length === 0) {
+      res.status(404).json({ message: 'No matching tweets found.' });
+    } else {
+      const extractedData = dbRes.rows.map(row => {
+        const content = row.tweet_content;
+
+        const nameMatch = content.match(/name\s*=\s*["'](.+?)["']/i);
+        const descMatch = content.match(/description\s*=\s*["'](.+?)["']/i);
+        const websiteMatch = content.match(/website\s*=\s*["'](.+?)["']/i);
+        const telegramMatch = content.match(/telegram\s*=\s*["'](.+?)["']/i);
+        const liquidityMatch = content.match(/initial\s+liquidity\s*=\s*["'](.+?)["']/i);
+         const imageurl = content.match(/Image\s+link\s*[:=]\s*["']?(.+?)["']?(?:\s|$)/i);
+
+
+        return {
+          tweetid: row.tweet_id,
+          name: nameMatch ? nameMatch[1] : 'N/A',
+          description: descMatch ? descMatch[1] : 'N/A',
+          website: websiteMatch ? websiteMatch[1] : 'N/A',
+          telegram: telegramMatch ? telegramMatch[1] : 'N/A',
+          initial_liquidity: liquidityMatch ? liquidityMatch[1] : 'N/A',
+          imageurl: imageurl ? imageurl[1] : 'N/A',
+        };
+      });
+
+      res.status(200).json(extractedData);
+    }
+  } catch (err) {
+    console.error('Error querying tweets:', err);
+    res.status(500).json({ error: 'Internal server error while fetching tweets.' });
+  } finally {
+    // In a typical Express app, you don't close the pool here.
+    // The pool should remain open for the lifetime of the application.
+    // Closing it here would prevent future requests from working.
+    // If this is a serverless function or a script meant to run and exit,
+    // you might handle connection closing differently.
+  }
+});
 // --- Server Start ---
 app.listen(PORT, () => {
   console.log(`🚀 API server listening at http://localhost:${PORT}`);

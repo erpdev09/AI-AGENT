@@ -1,80 +1,118 @@
 const { VersionedTransaction, Keypair } = require("@solana/web3.js");
 const axios = require("axios");
 const FormData = require("form-data");
+const fs = require('fs').promises; // Use promise version for async/await
+const path = require('path');
 
 /**
- * @typedef {Object} PumpFunTokenOptions
- * @property {string} [twitter]
- * @property {string} [telegram]
- * @property {string} [website]
- * @property {number} [initialLiquiditySOL] - Initial liquidity in SOL. Defaults to a small amount if not provided.
- * @property {number} [slippageBps] - Slippage in basis points (e.g., 500 for 5%). Defaults to 5 if not provided.
- * @property {number} [priorityFee] - Priority fee in SOL. Defaults to a small amount if not provided.
- */
-
-/**
- * @typedef {Object} PumpfunLaunchResponse
- * @property {string} signature - The transaction signature of the token creation.
- * @property {string} mint - The public key of the newly created mint.
- * @property {string} [metadataUri] - The URI of the uploaded metadata.
- * @property {string} [error] - An error message if the launch failed.
- */
-
-/**
- * Uploads token metadata and image to IPFS via Pump.fun's API.
+ * Uploads token metadata to IPFS via Pump.fun's API by downloading and uploading the image file.
  * @param {string} tokenName - The name of the token.
  * @param {string} tokenTicker - The symbol/ticker of the token.
  * @param {string} description - A description of the token.
  * @param {string} imageUrl - A publicly accessible URL to the token's image.
- * @param {PumpFunTokenOptions} [options] - Optional social media links.
+ * @param {Object} options - Optional social media links.
  * @returns {Promise<Object>} The API response containing metadata URI and other details.
  */
 async function uploadMetadataWithAxios(tokenName, tokenTicker, description, imageUrl, options) {
-  const formData = new FormData();
-  formData.append("name", tokenName);
-  formData.append("symbol", tokenTicker);
-  formData.append("description", description);
-  formData.append("showName", "true"); // As per original script
+  const tempDir = 'tempfolder';
+  // Generate a simple unique filename, perhaps based on ticker or a timestamp
+  const localFileName = `${tokenTicker || 'token'}_${Date.now()}.png`;
+  const localFilePath = path.join(tempDir, localFileName);
 
-  if (options?.twitter) formData.append("twitter", options.twitter);
-  if (options?.telegram) formData.append("telegram", options.telegram);
-  if (options?.website) formData.append("website", options.website);
-
-  // Fetch the image and convert it to a Buffer for FormData
-  const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-  if (imageResponse.status !== 200) {
-    throw new Error(`Failed to fetch image from ${imageUrl}: Status ${imageResponse.status}`);
-  }
-  const imageBuffer = Buffer.from(imageResponse.data);
-  formData.append("file", imageBuffer, { filename: "token_image.png", contentType: "image/png" });
+  let imageBuffer; // Variable to hold the image buffer
+  let metadataApiResponse; // Variable to hold the final response
 
   try {
-    const metadataApiResponse = await axios.post("https://pump.fun/api/ipfs", formData, {
+    // 1. Create the temporary directory if it doesn't exist
+    await fs.mkdir(tempDir, { recursive: true });
+    console.log(`Ensured temporary directory exists: ${tempDir}`);
+
+    // 2. Download the image from the provided URL
+    console.log(`Downloading image from URL: ${imageUrl}`);
+    const imageResponse = await axios.get(imageUrl, {
+      responseType: 'arraybuffer' // Get the response data as an ArrayBuffer
+    });
+    const imageData = imageResponse.data;
+    console.log(`Downloaded image data size: ${imageData.byteLength} bytes`);
+
+    // 3. Save the downloaded image data to a local file
+    console.log(`Saving image to local file: ${localFilePath}`);
+    await fs.writeFile(localFilePath, imageData);
+    console.log(`Image successfully saved locally.`);
+
+    // 4. Read the saved image file into a Buffer
+    console.log(`Reading image from local file into buffer: ${localFilePath}`);
+    imageBuffer = await fs.readFile(localFilePath);
+    console.log(`Image read into buffer.`);
+
+    // 5. Prepare FormData with the local image file buffer
+    const formData = new FormData();
+    formData.append("name", tokenName);
+    formData.append("symbol", tokenTicker);
+    formData.append("description", description);
+    formData.append("showName", "true"); // As per original script
+    // Append the image buffer with the field name (commonly "file" or "image"), the buffer, and the filename
+    // NOTE: The exact field name ("file" in this case) is inferred or needs confirmation from Pump.fun's API requirements.
+    formData.append("file", imageBuffer, localFileName); // Append the file buffer
+
+    if (options?.twitter) formData.append("twitter", options.twitter);
+    if (options?.telegram) formData.append("telegram", options.telegram);
+    if (options?.website) formData.append("website", options.website);
+
+    // 6. Upload the metadata including the attached image file
+    console.log("Uploading metadata with image file to Pump.fun IPFS API...");
+    metadataApiResponse = await axios.post("https://pump.fun/api/ipfs", formData, {
       headers: {
         ...formData.getHeaders(), // form-data helps set the correct Content-Type with boundary
-        // Add any other headers pump.fun might require for this endpoint
       },
     });
-    // Assuming the API returns a JSON response directly with metadataUri and metadata object
-    // e.g., { success: true, metadataUri: "...", metadata: { name: "...", symbol: "..." } }
-    return metadataApiResponse.data;
+    console.log("Metadata upload successful.");
+
+    return metadataApiResponse.data; // Return the API response data
+
   } catch (error) {
+    // Enhanced error handling for different stages
+    console.error("Error during image processing or metadata upload:");
     if (error.response) {
-      throw new Error(`Metadata upload failed: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+      let errorDetails = "Could not decode error response data.";
+      try {
+          // Attempt to decode potential error response data (might be JSON or text in ArrayBuffer)
+          errorDetails = Buffer.from(error.response.data).toString();
+      } catch (e) { /* ignore decoding error if it's not a buffer or not text */ }
+      console.error(`API Error: Status ${error.response.status}, Data: ${errorDetails}`);
+      throw new Error(`Metadata upload failed: ${error.response.status} - ${errorDetails}`);
     } else if (error.request) {
+      console.error(`Network Error: No response received from server.`);
       throw new Error(`Metadata upload failed: No response from server for IPFS upload - ${error.message}`);
     } else {
+      console.error(`General Error: ${error.message}`);
+      // Add details if it was a file system error (download, read, write)
+      if (error.code) console.error(`Error Code: ${error.code}`);
       throw new Error(`Metadata upload failed: ${error.message}`);
+    }
+
+  } finally {
+    // 7. Clean up the local temporary file
+    console.log(`Attempting to clean up temporary file: ${localFilePath}`);
+    try {
+      // Check if the file exists before trying to delete
+      await fs.access(localFilePath);
+      await fs.unlink(localFilePath);
+      console.log(`Temporary file deleted: ${localFilePath}`);
+    } catch (cleanupError) {
+      // Ignore error if file didn't exist or couldn't be deleted
+      console.warn(`Warning: Could not delete temporary file ${localFilePath}: ${cleanupError.message}`);
     }
   }
 }
+
 
 /**
  * Creates the token transaction payload using Pump.fun's API.
  * @param {Object} agent - Plain object with `connection`, `wallet`, and `wallet_address`.
  * @param {Keypair} mintKeypair - The keypair for the new mint.
  * @param {Object} metadataResponse - The response from `uploadMetadataWithAxios`.
- * @param {PumpFunTokenOptions} [options] - Options including initial liquidity, slippage, and priority fee.
+ * @param {Object} options - Options including initial liquidity, slippage, and priority fee.
  * @returns {Promise<ArrayBuffer>} The transaction data as an ArrayBuffer.
  */
 async function createTokenTransactionWithAxios(agent, mintKeypair, metadataResponse, options) {
@@ -98,7 +136,6 @@ async function createTokenTransactionWithAxios(agent, mintKeypair, metadataRespo
     const apiResponse = await axios.post("https://pumpportal.fun/api/trade-local", payload, {
       headers: {
         "Content-Type": "application/json",
-        // Add any other headers pump.fun might require
       },
       responseType: 'arraybuffer', // To get an ArrayBuffer directly, as expected by VersionedTransaction.deserialize
     });
@@ -160,13 +197,13 @@ async function signAndSendTransaction(agent, tx, mintKeypair) {
 
 /**
  * Launch a token on Pump.fun using axios for HTTP requests.
- * @param {Object} agent - Plain object with `connection` (Solana Connection), `wallet` (Signer object, e.g., from a wallet adapter or Keypair), and `wallet_address` (PublicKey of the user's wallet).
- * @param {string} tokenName - The name of the token (e.g., "My Awesome Token").
- * @param {string} tokenTicker - The ticker/symbol for the token (e.g., "MAT").
+ * @param {Object} agent - Plain object with `connection`, `wallet`, and `wallet_address`.
+ * @param {string} tokenName - The name of the token.
+ * @param {string} tokenTicker - The ticker/symbol for the token.
  * @param {string} description - A description for the token.
- * @param {string} imageUrl - A direct, public URL to an image for the token (e.g., a PNG or JPG).
- * @param {PumpFunTokenOptions} [options] - Optional parameters for the token launch.
- * @returns {Promise<PumpfunLaunchResponse>} An object containing the signature, mint address, metadata URI, or an error.
+ * @param {string} imageUrl - A direct, public URL to an image for the token.
+ * @param {Object} options - Optional parameters for the token launch.
+ * @returns {Promise<Object>} An object containing the signature, mint address, metadata URI, or an error.
  */
 async function launchPumpFunToken(agent, tokenName, tokenTicker, description, imageUrl, options = {}) {
   try {
@@ -181,6 +218,7 @@ async function launchPumpFunToken(agent, tokenName, tokenTicker, description, im
     console.log(`Generated new mint keypair: ${mintKeypair.publicKey.toBase58()}`);
 
     console.log("Uploading metadata...");
+    // This function now handles download -> save -> read -> upload file
     const metadataResponse = await uploadMetadataWithAxios(tokenName, tokenTicker, description, imageUrl, options);
     console.log("Metadata uploaded:", metadataResponse);
 
@@ -209,80 +247,23 @@ async function launchPumpFunToken(agent, tokenName, tokenTicker, description, im
     };
   } catch (error) {
     console.error("Error in launchPumpFunToken:", error.message);
+    // Log the full error object in detail if it has one (e.g., axios errors)
     if (error.response && error.response.data) {
-        // If the error is an axios error with a response, log that data
         try {
             const errorDataString = Buffer.isBuffer(error.response.data) ? error.response.data.toString() : JSON.stringify(error.response.data);
             console.error("Axios error response data:", errorDataString);
         } catch (e) {
             console.error("Could not stringify axios error data.");
         }
+    } else if (error.request) {
+         console.error("Axios error request:", error.request);
+    } else {
+         console.error("Full error object:", error);
     }
-    return { error: error.message };
+    return { error: error.message || "An unexpected error occurred during token launch." };
   }
 }
 
 module.exports = {
   launchPumpFunToken,
-  // You might also want to export the helper functions if they are useful elsewhere
-  // uploadMetadataWithAxios,
-  // createTokenTransactionWithAxios,
 };
-
-// Example Usage (ensure you have an 'agent' object properly configured):
-/*
-async function main() {
-  // THIS IS EXAMPLE SETUP - REPLACE WITH YOUR ACTUAL AGENT CONFIGURATION
-  // const { Connection, Keypair, PublicKey } = require("@solana/web3.js");
-  // const bs58 = require('bs58');
-
-  // const connection = new Connection("https://api.mainnet-beta.solana.com"); // Or your preferred RPC
-  // const privateKeyString = "YOUR_WALLET_PRIVATE_KEY_BS58_ENCODED"; // BE VERY CAREFUL WITH PRIVATE KEYS
-  // const walletKeypair = Keypair.fromSecretKey(bs58.decode(privateKeyString));
-  // const walletPublicKey = walletKeypair.publicKey;
-
-  // const agent = {
-  //   connection: connection,
-  //   wallet: walletKeypair, // This needs to be a Signer object
-  //   wallet_address: walletPublicKey
-  // };
-
-  // const tokenDetails = {
-  //   tokenName: "My Test Token Axios",
-  //   tokenTicker: "MTTA",
-  //   description: "This is a test token launched with Axios via Pump.fun.",
-  //   imageUrl: "https://example.com/path/to/your/image.png", // REPLACE WITH A REAL, PUBLIC IMAGE URL
-  //   options: {
-  //     twitter: "https://twitter.com/yourprofile",
-  //     telegram: "https://t.me/yourgroup",
-  //     website: "https://yourwebsite.com",
-  //     initialLiquiditySOL: 0.01, // e.g., 0.01 SOL
-  //     slippageBps: 50, // 0.5% slippage
-  //     priorityFee: 0.0001 // 0.0001 SOL priority fee
-  //   }
-  // };
-
-  // console.log("Launching token...");
-  // const result = await launchPumpFunToken(
-  //   agent,
-  //   tokenDetails.tokenName,
-  //   tokenDetails.tokenTicker,
-  //   tokenDetails.description,
-  //   tokenDetails.imageUrl,
-  //   tokenDetails.options
-  // );
-
-  // if (result.error) {
-  //   console.error("Failed to launch token:", result.error);
-  // } else {
-  //   console.log("Token launched successfully!");
-  //   console.log("Signature:", result.signature);
-  //   console.log("Mint:", result.mint);
-  //   console.log("Metadata URI:", result.metadataUri);
-  // }
-}
-
-main().catch(err => {
-  console.error("Unhandled error in main:", err);
-});
-*/

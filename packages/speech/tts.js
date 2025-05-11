@@ -2,7 +2,7 @@ const gTTS = require('gtts');
 const fs = require('fs');
 const path = require('path'); 
 
-const textToConvert = 'hahahah testing';
+const textToConvert = 'this is testing the voice';
 const language = 'en';
 const tempDirName = 'temp'; 
 const outputFileName = 'processaudio.mp3'; 

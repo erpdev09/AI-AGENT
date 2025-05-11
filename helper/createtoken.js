@@ -25,16 +25,19 @@ async function findMatchingTweets() {
         const websiteMatch = content.match(/website\s*=\s*["'](.+?)["']/i);
         const telegramMatch = content.match(/telegram\s*=\s*["'](.+?)["']/i);
         const liquidityMatch = content.match(/initial\s+liquidity\s*=\s*["'](.+?)["']/i);
+        const imageurl = content.match(/Image\s+link\s*[:=]\s*["']?(.+?)["']?(?:\s|$)/i);
 
         const tokenData = {
+          tweetid: row.tweet_id,
           name: nameMatch ? nameMatch[1] : 'N/A',
           description: descMatch ? descMatch[1] : 'N/A',
           website: websiteMatch ? websiteMatch[1] : 'N/A',
           telegram: telegramMatch ? telegramMatch[1] : 'N/A',
           initial_liquidity: liquidityMatch ? liquidityMatch[1] : 'N/A',
+          imageurl: imageurl ? imageurl[1] : 'N/A',
         };
 
-        console.log(`${index + 1}.`);
+    
         console.log(tokenData);
         console.log('-------------------------');
       });

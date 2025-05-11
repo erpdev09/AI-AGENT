@@ -1,9 +1,10 @@
-// index.js
 const { Keypair, Connection } = require('@solana/web3.js');
-const { launchPumpFunToken } = require('./deploytoken');
 const bs58 = require('bs58');
 
-const USER_PROVIDED_SECRET_KEY_BS58 = process.env.SOLANA_PRIVATE_KEY;
+// Modifying the import path to require from the locally provided file
+const { launchPumpFunToken } = require('./deploytoken');
+
+const USER_PROVIDED_SECRET_KEY_BS58 = '';
 
 let loadedWallet;
 try {
@@ -50,7 +51,7 @@ async function deployToken({
 
   console.log(`\n--- Launching Token: ${tokenName} (${tokenTicker}) ---`);
   console.log(`Wallet: ${agent.wallet_address.toBase58()}`);
-  console.log(`Image: ${imageUrl}`);
+  console.log(`Image URL: ${imageUrl}`); // We still log the source URL
 
   try {
     const result = await launchPumpFunToken(
@@ -58,7 +59,7 @@ async function deployToken({
       tokenName,
       tokenTicker,
       description,
-      imageUrl,
+      imageUrl, // Pass the original image URL
       options
     );
 

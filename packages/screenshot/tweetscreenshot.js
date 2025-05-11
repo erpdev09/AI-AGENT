@@ -1,7 +1,7 @@
 const puppeteer = require('puppeteer');
 
 // The tweet URL to capture
-const tweetUrl = 'https://x.com/starwars/status/1920288059049832904';
+const tweetUrl = 'https://x.com/Cristiano/status/1917327623421563126';
 
 async function takeScreenshot(url) {
   console.log(`Taking screenshot of: ${url}`);
