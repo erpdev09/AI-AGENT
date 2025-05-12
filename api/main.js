@@ -645,6 +645,37 @@ app.get('/createnft', async (req, res) => {
 });
 
 
+app.get('/createtiptoken', async (req, res) => {
+  try {
+    // Regex to match a number (integer or decimal)
+    const amountRegex = /([0-9]*\.?[0-9]+)/;
+
+    const { rows } = await pool.query(
+      `SELECT tweet_id, tweet_link_extra, tweet_content
+       FROM tweets1
+       WHERE LOWER(tweet_content) LIKE '%tip link%'`
+    );
+
+    const parsed = rows.map(row => {
+      const match = row.tweet_content.match(amountRegex);
+      const amount = match ? parseFloat(match[1]) : null;
+
+      return {
+        tweetId: row.tweet_id,
+        tweetLinkExtra: row.tweet_link_extra,
+        amount
+      };
+    }).filter(entry => entry.amount !== null); // Only keep valid entries
+
+    res.json(parsed);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+
 // --- Server Start ---
 app.listen(PORT, () => {
   console.log(`🚀 API server listening at http://localhost:${PORT}`);
