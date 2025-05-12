@@ -674,7 +674,25 @@ app.get('/createtiptoken', async (req, res) => {
   }
 });
 
+app.get('/todoscreenshot', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT tweet_id, tweet_link_extra
+       FROM tweets1
+       WHERE LOWER(tweet_content) LIKE '%screenshot%'`
+    );
 
+    const parsed = rows.map(row => ({
+      tweetId: row.tweet_id,
+      tweetLinkExtra: row.tweet_link_extra
+    }));
+
+    res.json(parsed);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 // --- Server Start ---
 app.listen(PORT, () => {
