@@ -593,6 +593,58 @@ app.get('/todoactivity/createtoken', async (req, res) => {
     // you might handle connection closing differently.
   }
 });
+
+
+app.get('/createnft', async (req, res) => {
+  try {
+    const keyword = 'create a nft from this image';
+    const query = `
+      SELECT tweet_id, tweet_content, action_perform FROM tweets1
+      WHERE LOWER(tweet_content) LIKE $1 AND action_perform = FALSE
+    `;
+    const values = [`%${keyword.toLowerCase()}%`];
+
+    const dbRes = await pool.query(query, values);
+
+    if (dbRes.rows.length === 0) {
+      return res.json({ message: 'No matching tweets found.', data: [] });
+    }
+
+    const extracted = [];
+
+    dbRes.rows.forEach((row) => {
+      const { tweet_id, tweet_content } = row;
+
+      const match = tweet_content.match(/name\s*=\s*['"]?([^'"]+)['"]?\s+.*?supply\s*=\s*['"]?([^'"]*)['"]?/i);
+
+      if (match) {
+        const name = match[1].trim();
+        const supplyRaw = match[2].trim();
+        const supplyMatch = supplyRaw.match(/\d+/);
+        const finalSupply = supplyMatch ? supplyMatch[0] : null;
+
+        if (finalSupply) {
+          extracted.push({
+            tweet_id,
+            name,
+            supply: finalSupply
+          });
+        }
+      }
+    });
+
+    if (extracted.length === 0) {
+      return res.json({ message: '❌ No tweets with both name and supply parameters found.', data: [] });
+    }
+
+    return res.json({ message: '✅ Tweets extracted successfully.', data: extracted });
+  } catch (err) {
+    console.error('❌ Error querying tweets:', err);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+
 // --- Server Start ---
 app.listen(PORT, () => {
   console.log(`🚀 API server listening at http://localhost:${PORT}`);

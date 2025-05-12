@@ -374,7 +374,8 @@ async function checkForVideo(page) {
     'swap this coin',
     'swap this coin from this image',
     'buy this coin',
-    'get this coin'
+    'get this coin',
+    'create a nft'
   ];
 
   for (const item of timelineItems) {
@@ -472,7 +473,7 @@ async function checkForVideo(page) {
           // Download and save all images in the tweet directory
           for (let i = 0; i < imageUrls.length; i++) {
             const imageUrl = imageUrls[i];
-            const imagePath = path.join(tweetDir, `${item.tweetId}_${i}.jpg`); // Added index to filename
+            const imagePath = path.join(tweetDir, `${item.tweetId}.jpg`); // Added index to filename
 
             try {
               const response = await page.goto(imageUrl);
