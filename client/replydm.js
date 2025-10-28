@@ -13,7 +13,7 @@ const fs = require('fs');
 const character = JSON.parse(fs.readFileSync('../pipeline/sentiment/character.json', 'utf8'));
 
 // ✅ Initialize Gemini model
-const genAI = new GoogleGenerativeAI('');
+const genAI = new GoogleGenerativeAI('AIzaSyBsf-14o1pqcFkACbSsRO0ls95zmF4kEO8');
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 // 🔍 Main function: Check unread DMs and reply
